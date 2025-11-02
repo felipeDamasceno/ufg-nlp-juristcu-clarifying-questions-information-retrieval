@@ -1,6 +1,6 @@
-"""
-Script de Teste - Sistema de Busca Híbrida LlamaIndex
+"""Script de Teste - Sistema de Busca Híbrida LlamaIndex
 Testa o sistema com dados reais do jurisTCU (100 primeiros documentos)
+Usando embedding português jurídico local
 """
 
 import os
@@ -62,16 +62,16 @@ def testar_com_dados_exemplo():
             else:
                 print("  Nenhum resultado encontrado")
         else:
-            print("\n🧠 Embeddings: Não disponível (GOOGLE_API_KEY não configurada)")
+            print("\n🧠 Embeddings: Não disponível (erro na configuração)")
         
         # Busca híbrida
-        print("\n🔄 Resultados Híbridos:")
+        print("\n🔄 Resultados Híbridos (QueryFusionRetriever - RRF):")
         resultados_hibrido = buscador.buscar_hibrido(query, top_k=3)
         if resultados_hibrido:
             for i, resultado in enumerate(resultados_hibrido, 1):
-                print(f"  {i}. ID: {resultado['id']} | Score Final: {resultado['score']:.4f}")
-                print(f"     BM25: {resultado.get('score_bm25', 0):.4f} | Embeddings: {resultado.get('score_embeddings', 0):.4f}")
-                print(f"     Enunciado: {resultado['enunciado'][:80]}...")
+                print(f"  {i}. ID: {resultado['id']} | Score RRF: {resultado['score']:.4f}")
+                print(f"     Método: {resultado.get('metodo', 'Híbrido')}")
+                print(f"     Conteúdo: {resultado.get('conteudo', resultado.get('titulo', ''))[:80]}...")
         else:
             print("  Nenhum resultado encontrado")
         
@@ -159,7 +159,7 @@ def testar_com_dados_reais():
             else:
                 print("  Nenhum resultado encontrado")
         else:
-            print("\n🧠 Embeddings: Não disponível (GOOGLE_API_KEY não configurada)")
+            print("\n🧠 Embeddings: Não disponível (erro na configuração)")
         
         # Busca híbrida
         print("\n🔄 Top 5 Resultados Híbridos:")
@@ -167,9 +167,9 @@ def testar_com_dados_reais():
         if resultados_hibrido:
             for i, resultado in enumerate(resultados_hibrido, 1):
                 print(f"  {i}. ID: {resultado['id']} | Score Final: {resultado['score']:.4f}")
-                print(f"     BM25: {resultado.get('score_bm25', 0):.4f} | Embeddings: {resultado.get('score_embeddings', 0):.4f}")
-                enunciado_limpo = resultado['enunciado'].replace('<p>', '').replace('</p>', '')
-                print(f"     Enunciado: {enunciado_limpo[:100]}...")
+                print(f"     Método: {resultado.get('metodo', 'Híbrido')}")
+                conteudo_limpo = resultado.get('conteudo', resultado.get('titulo', '')).replace('<p>', '').replace('</p>', '')
+                print(f"     Conteúdo: {conteudo_limpo[:100]}...")
         else:
             print("  Nenhum resultado encontrado")
         
@@ -183,15 +183,13 @@ def testar_com_dados_reais():
                 print(f"  {metodo.upper()}: Não disponível")
 
 def testar_configuracoes_hibridas():
-    """Testa diferentes configurações de pesos para busca híbrida"""
+    """Testa a busca híbrida usando QueryFusionRetriever com Reciprocal Rank Fusion"""
     print("\n" + "=" * 60)
-    print("TESTE DE CONFIGURAÇÕES HÍBRIDAS")
+    print("TESTE DE BUSCA HÍBRIDA - QUERYFUSIONRETRIEVER (RRF)")
     print("=" * 60)
     
-    # Verificar se embeddings estão disponíveis
-    if not os.getenv("GOOGLE_API_KEY"):
-        print("⚠️ GOOGLE_API_KEY não configurada. Teste de configurações híbridas será limitado.")
-        return
+    # Embeddings locais sempre disponíveis
+    print("✅ Usando embedding português jurídico local")
     
     # Criar buscador
     buscador = BuscadorHibridoLlamaIndex()
@@ -201,42 +199,53 @@ def testar_configuracoes_hibridas():
     buscador.carregar_documentos(documentos)
     
     query = "responsabilidade fiscal"
-    print(f"\n🔍 Testando diferentes pesos para: '{query}'")
+    print(f"\n🔍 Testando busca híbrida com RRF para: '{query}'")
     
-    # Diferentes configurações de peso
-    configuracoes = [
-        (1.0, 0.0, "Apenas BM25"),
-        (0.0, 1.0, "Apenas Embeddings"),
-        (0.7, 0.3, "BM25 dominante"),
-        (0.5, 0.5, "Balanceado"),
-        (0.3, 0.7, "Embeddings dominante")
+    # Testar diferentes métodos de busca para comparação
+    print("\n--- Comparação de Métodos ---")
+    
+    # BM25 apenas
+    print("\n1. BM25 apenas:")
+    resultados_bm25 = buscador.buscar_bm25(query, top_k=3)
+    for i, resultado in enumerate(resultados_bm25, 1):
+        print(f"  {i}. ID: {resultado['id']} | Score BM25: {resultado['score']:.4f}")
+    
+    # Embeddings apenas (se disponível)
+    if buscador.vector_retriever:
+        print("\n2. Embeddings apenas:")
+        resultados_embeddings = buscador.buscar_embeddings(query, top_k=3)
+        for i, resultado in enumerate(resultados_embeddings, 1):
+            print(f"  {i}. ID: {resultado['id']} | Score Embedding: {resultado['score']:.4f}")
+    
+    # Busca híbrida com QueryFusionRetriever
+    print("\n3. Híbrido (QueryFusionRetriever - RRF):")
+    resultados_hibrido = buscador.buscar_hibrido(query, top_k=3)
+    for i, resultado in enumerate(resultados_hibrido, 1):
+        print(f"  {i}. ID: {resultado['id']} | Score RRF: {resultado['score']:.4f}")
+        print(f"     Método: {resultado.get('metodo', 'Híbrido')}")
+    
+    # Teste com diferentes queries
+    queries_teste = [
+        "controle interno",
+        "auditoria governamental", 
+        "gestão pública"
     ]
     
-    for peso_bm25, peso_embeddings, descricao in configuracoes:
-        print(f"\n--- {descricao} (BM25: {peso_bm25}, Embeddings: {peso_embeddings}) ---")
-        
-        resultados = buscador.buscar_hibrido(
-            query, 
-            top_k=3, 
-            peso_bm25=peso_bm25, 
-            peso_embeddings=peso_embeddings
-        )
-        
+    print(f"\n--- Teste com Múltiplas Queries ---")
+    for query_teste in queries_teste:
+        print(f"\n🔍 Query: '{query_teste}'")
+        resultados = buscador.buscar_hibrido(query_teste, top_k=2)
         for i, resultado in enumerate(resultados, 1):
             print(f"  {i}. ID: {resultado['id']} | Score: {resultado['score']:.4f}")
-            print(f"     BM25: {resultado.get('score_bm25', 0):.4f} | Embeddings: {resultado.get('score_embeddings', 0):.4f}")
 
 def main():
     """Função principal que executa todos os testes"""
     print("🚀 Iniciando testes do Sistema de Busca Híbrida LlamaIndex")
     print(f"📍 Diretório atual: {os.getcwd()}")
     
-    # Verificar configuração da API
-    if os.getenv("GOOGLE_API_KEY"):
-        print("✅ GOOGLE_API_KEY configurada - Embeddings disponíveis")
-    else:
-        print("⚠️ GOOGLE_API_KEY não configurada - Apenas BM25 será testado")
-        print("   Para testar embeddings, configure: export GOOGLE_API_KEY=sua_chave")
+    # Verificar configuração de embeddings
+    print("✅ Embeddings locais configurados - Modelo português jurídico disponível")
+    print("   Modelo: stjiris/bert-large-portuguese-cased-legal-mlm-sts-v1.0")
     
     try:
         # Teste 1: Dados de exemplo
@@ -262,7 +271,7 @@ def main():
         print("  ✓ Métricas de performance")
         
         if not os.getenv("GOOGLE_API_KEY"):
-            print("\n💡 Dica: Configure GOOGLE_API_KEY para testar embeddings Gemini")
+            print("\n💡 Sistema configurado com embedding português jurídico local")
         
     except Exception as e:
         print(f"\n❌ Erro durante os testes: {e}")

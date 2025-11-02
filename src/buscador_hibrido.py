@@ -9,10 +9,11 @@ from typing import List, Dict, Any, Optional
 
 # Imports do LlamaIndex
 from llama_index.core import Document, VectorStoreIndex, Settings
-from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.core.vector_stores import SimpleVectorStore
 from llama_index.core.storage.storage_context import StorageContext
 from llama_index.core.schema import TextNode
+from llama_index.core.retrievers import QueryFusionRetriever
 
 # Imports locais
 from src.documento import DocumentoJuris
@@ -26,12 +27,9 @@ class BuscadorHibridoLlamaIndex:
     Combina BM25 e embeddings do Gemini
     """
     
-    def __init__(self, google_api_key: Optional[str] = None):
+    def __init__(self):
         """
-        Inicializa o buscador híbrido
-        
-        Args:
-            google_api_key: Chave da API do Google (opcional, pode usar variável de ambiente)
+        Inicializa o buscador híbrido com embedding português jurídico
         """
         self.preprocessador = PreprocessadorTexto()
         self.documentos = []
@@ -39,22 +37,23 @@ class BuscadorHibridoLlamaIndex:
         self.vector_retriever = None
         self.embeddings_model = None
         
-        # Configurar API do Google
-        if google_api_key:
-            os.environ["GOOGLE_API_KEY"] = google_api_key
+        # Retrievers do LlamaIndex
+        self.llama_bm25_retriever = None
+        self.llama_vector_retriever = None
+        self.hybrid_retriever = None
         
-        # Verificar se a chave está disponível
-        if os.getenv("GOOGLE_API_KEY"):
-            try:
-                self.embeddings_model = GoogleGenAIEmbedding(
-                    model_name="models/embedding-001"
-                )
-                print("✓ Modelo de embeddings Gemini configurado com sucesso")
-            except Exception as e:
-                print(f"⚠ Erro ao configurar embeddings Gemini: {e}")
-                self.embeddings_model = None
-        else:
-            print("⚠ GOOGLE_API_KEY não encontrada. Embeddings não estarão disponíveis.")
+        # Configurar modelo de embeddings português jurídico
+        try:
+            self.embeddings_model = HuggingFaceEmbedding(
+                model_name="stjiris/bert-large-portuguese-cased-legal-mlm-sts-v1.0",
+                trust_remote_code=True
+            )
+            print("✓ Modelo de embeddings português jurídico configurado com sucesso")
+            print("  - Modelo: stjiris/bert-large-portuguese-cased-legal-mlm-sts-v1.0")
+            print("  - Especializado em domínio jurídico português")
+        except Exception as e:
+            print(f"⚠ Erro ao configurar embeddings: {e}")
+            self.embeddings_model = None
     
     def carregar_documentos(self, documentos: List[DocumentoJuris]):
         """
@@ -90,6 +89,9 @@ class BuscadorHibridoLlamaIndex:
         # Configurar embeddings se disponível
         if self.embeddings_model:
             self._configurar_embeddings(documentos)
+        
+        # Configurar retrievers do LlamaIndex
+        self._configurar_retrievers_llama(bm25_docs)
     
     def _configurar_bm25(self, documentos: List[Document]):
         """Configura o retriever BM25 com parâmetros específicos k1=1.2, b=0.75"""
@@ -125,6 +127,31 @@ class BuscadorHibridoLlamaIndex:
             print(f"✗ Erro ao configurar BM25: {e}")
             self.bm25_retriever = None
     
+    def _configurar_retrievers_llama(self, documentos: List[Document]):
+        """Configura os retrievers do LlamaIndex para busca híbrida"""
+        try:
+            # Configurar Vector Retriever se embeddings estão disponíveis
+            if self.vector_retriever:
+                self.llama_vector_retriever = self.vector_retriever
+                
+                # Configurar Hybrid Retriever usando QueryFusionRetriever
+                # Combina nosso BM25 customizado (com k1 e b) com vector retriever
+                self.hybrid_retriever = QueryFusionRetriever(
+                    retrievers=[self.bm25_retriever, self.llama_vector_retriever],
+                    similarity_top_k=10,
+                    num_queries=1,  # Usar apenas a query original
+                    mode="reciprocal_rerank",  # Usar Reciprocal Rank Fusion
+                    use_async=False
+                )
+                
+                print("Hybrid retriever configurado com QueryFusionRetriever (RRF)")
+                print(f"Usando BM25 customizado com k1={self.bm25_retriever.bm25.k1}, b={self.bm25_retriever.bm25.b}")
+            else:
+                print("Vector retriever não está configurado - usando apenas BM25")
+                
+        except Exception as e:
+            print(f"Erro ao configurar retrievers do LlamaIndex: {e}")
+        
     def _configurar_embeddings(self, documentos: List[DocumentoJuris]):
         """Configura o retriever de embeddings"""
         try:
@@ -134,19 +161,23 @@ class BuscadorHibridoLlamaIndex:
                 # Para embeddings: apenas enunciado sem HTML
                 texto_limpo = self.preprocessador.remove_html(doc.enunciado)
                 
+                # Metadados simplificados para evitar erro de tamanho
+                metadata_simples = {
+                    "id": doc.id,
+                    "titulo": doc.enunciado[:100] + "..." if len(doc.enunciado) > 100 else doc.enunciado
+                }
+                
                 llama_doc = Document(
                     text=texto_limpo,
                     doc_id=doc.id,
-                    metadata={
-                        "id": doc.id,
-                        "enunciado": doc.enunciado,
-                        "excerto": doc.excerto
-                    }
+                    metadata=metadata_simples
                 )
                 embedding_docs.append(llama_doc)
             
-            # Configurar Settings do LlamaIndex
+            # Configurar Settings do LlamaIndex com chunk_size maior
             Settings.embed_model = self.embeddings_model
+            Settings.chunk_size = 2048  # Aumentar chunk_size para evitar erro de metadata
+            Settings.chunk_overlap = 200
             
             # Criar índice vetorial
             vector_store = SimpleVectorStore()
@@ -162,9 +193,10 @@ class BuscadorHibridoLlamaIndex:
             )
             
             print("✓ Vector retriever configurado com sucesso")
-            print("  - Modelo: Gemini embedding-001")
+            print("  - Modelo: Embedding português jurídico")
             print("  - Preprocessamento: remoção de HTML")
             print("  - Campos: apenas enunciado")
+            print(f"  - Chunk size: {Settings.chunk_size}")
             
         except Exception as e:
             print(f"✗ Erro ao configurar embeddings: {e}")
@@ -246,73 +278,60 @@ class BuscadorHibridoLlamaIndex:
             print(f"✗ Erro na busca por embeddings: {e}")
             return []
     
-    def buscar_hibrido(self, query: str, top_k: int = 10, 
-                      peso_bm25: float = 0.5, peso_embeddings: float = 0.5) -> List[Dict[str, Any]]:
+    def buscar_hibrido(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
         """
-        Realiza busca híbrida combinando BM25 e embeddings
+        Realiza busca híbrida usando QueryFusionRetriever do LlamaIndex
         
         Args:
             query: Consulta de busca
             top_k: Número de resultados a retornar
-            peso_bm25: Peso para os resultados do BM25 (0-1)
-            peso_embeddings: Peso para os resultados dos embeddings (0-1)
             
         Returns:
-            Lista de resultados combinados com scores
+            Lista de resultados combinados com scores usando Reciprocal Rank Fusion
         """
-        # Buscar com ambos os métodos
-        resultados_bm25 = self.buscar_bm25(query, top_k * 2)  # Buscar mais para ter opções
-        resultados_embeddings = self.buscar_embeddings(query, top_k * 2)
+        if not self.hybrid_retriever:
+            print("Hybrid retriever não configurado. Usando busca BM25 apenas.")
+            return self.buscar_bm25(query, top_k)
         
-        if not resultados_bm25 and not resultados_embeddings:
-            return []
-        
-        # Combinar resultados
-        scores_combinados = {}
-        
-        # Processar resultados BM25
-        for i, resultado in enumerate(resultados_bm25):
-            doc_id = resultado["id"]
-            # Normalizar score (rank-based)
-            score_normalizado = 1.0 / (i + 1)
-            scores_combinados[doc_id] = {
-                "score_bm25": score_normalizado,
-                "score_embeddings": 0.0,
-                "documento": resultado
-            }
-        
-        # Processar resultados embeddings
-        for i, resultado in enumerate(resultados_embeddings):
-            doc_id = resultado["id"]
-            # Normalizar score (rank-based)
-            score_normalizado = 1.0 / (i + 1)
+        try:
+            from llama_index.core.schema import QueryBundle
             
-            if doc_id in scores_combinados:
-                scores_combinados[doc_id]["score_embeddings"] = score_normalizado
-            else:
-                scores_combinados[doc_id] = {
-                    "score_bm25": 0.0,
-                    "score_embeddings": score_normalizado,
-                    "documento": resultado
+            # Criar query bundle
+            query_bundle = QueryBundle(query_str=query)
+            
+            # Configurar top_k no retriever
+            self.hybrid_retriever.similarity_top_k = top_k
+            
+            # Executar busca híbrida
+            nodes_with_scores = self.hybrid_retriever.retrieve(query_bundle)
+            
+            # Converter resultados para formato esperado
+            resultados = []
+            for node_with_score in nodes_with_scores:
+                node = node_with_score.node
+                score = node_with_score.score
+                
+                # Extrair metadados
+                metadata = node.metadata or {}
+                
+                resultado = {
+                    "id": metadata.get("id", ""),
+                    "titulo": metadata.get("titulo", ""),
+                    "conteudo": node.text,
+                    "score": float(score),
+                    "metodo": "Híbrido (QueryFusionRetriever - RRF)",
+                    "metadata": metadata
                 }
-        
-        # Calcular scores finais
-        resultados_finais = []
-        for doc_id, dados in scores_combinados.items():
-            score_final = (peso_bm25 * dados["score_bm25"] + 
-                          peso_embeddings * dados["score_embeddings"])
+                
+                resultados.append(resultado)
             
-            resultado = dados["documento"].copy()
-            resultado["score"] = score_final
-            resultado["score_bm25"] = dados["score_bm25"]
-            resultado["score_embeddings"] = dados["score_embeddings"]
-            resultado["metodo"] = "Híbrido"
+            print(f"Busca híbrida executada: {len(resultados)} resultados encontrados")
+            return resultados
             
-            resultados_finais.append(resultado)
-        
-        # Ordenar por score final e retornar top_k
-        resultados_finais.sort(key=lambda x: x["score"], reverse=True)
-        return resultados_finais[:top_k]
+        except Exception as e:
+            print(f"Erro na busca híbrida: {e}")
+            print("Fallback para busca BM25")
+            return self.buscar_bm25(query, top_k)
     
     def avaliar_performance(self, query: str) -> Dict[str, Any]:
         """

@@ -1,9 +1,8 @@
 # LlamaIndex core e componentes
 llama-index==0.14.7
 llama-index-core==0.14.7
-llama-index-embeddings-google-genai==0.3.1
-llama-index-retrievers-bm25==0.3.0
-google-genai==1.47.0
+llama-index-embeddings-huggingface==0.6.1
+sentence-transformers==5.1.2
 
 # Dependências para processamento de texto em português
 nltk==3.9.2
@@ -18,3 +17,4 @@ faiss-cpu==1.12.0  # Para busca vetorial mais eficiente (opcional)
 
 # Para baixar o dataset com script utils/download_juris_tcu.py
 huggingface-hub==1.0.1
+
