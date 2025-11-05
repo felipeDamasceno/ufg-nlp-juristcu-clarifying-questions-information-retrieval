@@ -3,7 +3,8 @@ llama-index==0.14.7
 llama-index-core==0.14.7
 llama-index-embeddings-huggingface==0.6.1
 sentence-transformers==5.1.2
-
+transformers
+einops==0.8.1
 # Dependências para processamento de texto em português
 nltk==3.9.2
 pandas==2.2.3

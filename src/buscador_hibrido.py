@@ -8,13 +8,16 @@ import time
 from typing import List, Dict, Any, Optional
 
 # Imports do LlamaIndex
-from llama_index.core import Document, VectorStoreIndex, Settings
+from llama_index.core import VectorStoreIndex, Settings
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.core.vector_stores import SimpleVectorStore
 from llama_index.core.storage.storage_context import StorageContext
 from llama_index.core.schema import TextNode
 from llama_index.core.retrievers import QueryFusionRetriever
-from llama_index.core.schema import QueryBundle
+
+# Imports para o Reranker
+from transformers import AutoModelForSequenceClassification
+import torch
 
 # Imports locais
 from src.documento import DocumentoJuris
@@ -42,7 +45,9 @@ class BuscadorHibridoLlamaIndex:
         self.llama_bm25_retriever = None
         self.llama_vector_retriever = None
         self.hybrid_retriever = None
-        
+        self.reranker_model = None
+        self.reranker_device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
         # Configurar modelo de embeddings português jurídico
         try:
             self.embeddings_model = HuggingFaceEmbedding(
@@ -55,7 +60,22 @@ class BuscadorHibridoLlamaIndex:
         except Exception as e:
             print(f"⚠ Erro ao configurar embeddings: {e}")
             self.embeddings_model = None
-    
+
+        # Configurar modelo de Reranking
+        try:
+            self.reranker_model = AutoModelForSequenceClassification.from_pretrained(
+                'jinaai/jina-reranker-v2-base-multilingual',
+                torch_dtype="auto",
+                trust_remote_code=True,
+            )
+            self.reranker_model.to(self.reranker_device)
+            self.reranker_model.eval()
+            print(f"✓ Modelo de Reranking configurado com sucesso em {self.reranker_device}")
+            print("  - Modelo: jinaai/jina-reranker-v2-base-multilingual")
+        except Exception as e:
+            print(f"⚠ Erro ao configurar Reranker: {e}")
+            self.reranker_model = None
+
     def carregar_documentos(self, documentos: List[DocumentoJuris]):
         """
         Carrega e processa documentos, criando nós compartilhados para BM25 e Embeddings.
@@ -285,6 +305,10 @@ class BuscadorHibridoLlamaIndex:
 
             print(f"QueryFusionRetriever retornou {len(retrieved_nodes)} nós únicos.")
 
+            # Aplicar Reranking se o modelo estiver disponível
+            if self.reranker_model:
+                retrieved_nodes = self._rerank_nodes(consulta, retrieved_nodes, top_n=top_k)
+
             # Formatar os resultados para o padrão esperado
             resultados_formatados = []
             for node in retrieved_nodes[:top_k]:
@@ -293,7 +317,7 @@ class BuscadorHibridoLlamaIndex:
                     "titulo": node.metadata.get("titulo", ""),
                     "conteudo": node.text,
                     "score": node.score,
-                    "metodo": "Híbrido (QueryFusionRetriever)",
+                    "metodo": "Híbrido (RRF + Reranker)" if self.reranker_model else "Híbrido (QueryFusionRetriever)",
                     "metadata": {
                         "enunciado": node.metadata.get("enunciado", ""),
                         "excerto": node.metadata.get("excerto", ""),
@@ -306,54 +330,39 @@ class BuscadorHibridoLlamaIndex:
 
         except Exception as e:
             print(f"✗ Erro na busca híbrida com QueryFusionRetriever: {e}")
-            print("    Fallback para busca híbrida com RRF manual.")
-            return self._buscar_hibrido_manual_rrf(consulta, top_k)
 
-    def _buscar_hibrido_manual_rrf(self, consulta: str, top_k: int = 10) -> List[Dict]:
+    def _rerank_nodes(self, query: str, nodes: List[TextNode], top_n: int = 5) -> List[TextNode]:
         """
-        Fallback: Realiza busca híbrida com RRF manual. Usado apenas se o QueryFusionRetriever falhar.
+        Aplica o reranking nos nós recuperados usando o modelo Jina Reranker.
+
+        Args:
+            query: A consulta original.
+            nodes: A lista de nós recuperados pela busca híbrida.
+            top_n: O número de melhores resultados a serem retornados após o reranking.
+
+        Returns:
+            Uma lista de nós reordenados e com scores atualizados.
         """
-        print("--- Fallback para RRF Manual ---")
-        bm25_results = self.buscar_bm25(consulta, top_k=top_k)
-        vector_results = self.buscar_embeddings(consulta, top_k=top_k)
-        
-        k = 60
-        rrf_scores = {}
+        if not self.reranker_model or not nodes:
+            return nodes
 
-        # Processar resultados BM25
-        for rank, result in enumerate(bm25_results, 1):
-            doc_id = result['id']
-            if doc_id not in rrf_scores:
-                rrf_scores[doc_id] = {'score': 0.0, 'details': result}
-            rrf_scores[doc_id]['score'] += 1.0 / (rank + k)
+        print(f"--- Aplicando Reranking em {len(nodes)} nós ---")
 
-        # Processar resultados Vector
-        for rank, result in enumerate(vector_results, 1):
-            doc_id = result['id']
-            if doc_id not in rrf_scores:
-                rrf_scores[doc_id] = {'score': 0.0, 'details': result}
-            rrf_scores[doc_id]['score'] += 1.0 / (rank + k)
+        # Criar pares de [query, texto_do_nó] para o reranker
+        pairs = [[query, node.get_content()] for node in nodes]
 
-        sorted_results = sorted(rrf_scores.items(), key=lambda item: item[1]['score'], reverse=True)
-        
-        # Formatar para o padrão de saída
-        resultados_formatados = []
-        for doc_id, data in sorted_results[:top_k]:
-            details = data['details']
-            resultado = {
-                "id": doc_id,
-                "titulo": details['enunciado'][:100] + "...",
-                "conteudo": details['texto_completo'],
-                "score": data['score'],
-                "metodo": "Híbrido (RRF Manual Fallback)",
-                "metadata": {
-                    "enunciado": details['enunciado'],
-                    "excerto": details['excerto']
-                }
-            }
-            resultados_formatados.append(resultado)
-            
-        return resultados_formatados
+        with torch.no_grad():
+            scores = self.reranker_model.compute_score(pairs, batch_size=4) # Ajuste o batch_size conforme sua VRAM
+
+        # Adicionar os novos scores aos nós
+        for node, score in zip(nodes, scores):
+            node.score = score # Substitui o score do RRF pelo score do reranker
+
+        # Reordenar os nós com base nos novos scores
+        reranked_nodes = sorted(nodes, key=lambda x: x.score, reverse=True)
+
+        print(f"✓ Reranking concluído. Retornando os {top_n} melhores resultados.")
+        return reranked_nodes[:top_n]
 
     def avaliar_performance(self, query: str) -> Dict[str, Any]:
         """
