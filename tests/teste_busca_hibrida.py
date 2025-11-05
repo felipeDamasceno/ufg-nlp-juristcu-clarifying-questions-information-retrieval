@@ -264,7 +264,7 @@ def main():
         # Resumo final
         print("\n📋 Resumo dos Testes:")
         print("  ✓ Busca BM25 com preprocessamento tokenizador_pt_remove_html")
-        print("  ✓ Configuração BM25: enunciado + excerto")
+        print("  ✓ Configuração BM25: apenas enunciado")
         print("  ✓ Configuração Embeddings: apenas enunciado (sem HTML)")
         print("  ✓ Busca híbrida com diferentes pesos")
         print("  ✓ Teste com dados reais do jurisTCU (100 documentos)")

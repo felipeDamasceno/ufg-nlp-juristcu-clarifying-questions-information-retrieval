@@ -58,71 +58,72 @@ class BuscadorHibridoLlamaIndex:
     
     def carregar_documentos(self, documentos: List[DocumentoJuris]):
         """
-        Carrega documentos no sistema
+        Carrega e processa documentos, criando nós compartilhados para BM25 e Embeddings.
         
         Args:
             documentos: Lista de documentos jurídicos
         """
         self.documentos = documentos
-        print(f"✓ {len(documentos)} documentos carregados")
-        
-        # Criar documentos do LlamaIndex para BM25 (enunciado + excerto)
-        bm25_docs = []
+        print(f"✓ {len(documentos)} documentos carregados para processamento")
+
+        # Configurar tokenizer para truncamento
+        from transformers import AutoTokenizer
+        tokenizer = AutoTokenizer.from_pretrained("stjiris/bert-large-portuguese-cased-legal-mlm-sts-v1.0")
+
+        # 1. Criar Nós (Nodes) compartilhados a partir do ENUNCIADO
+        nodes = []
+        textos_truncados = 0
         for doc in documentos:
-            # Para BM25: combinar enunciado e excerto
-            texto_completo = f"{doc.enunciado} {doc.excerto}"
+            texto_limpo = self.preprocessador.remove_html(doc.enunciado)
             
-            # Criar documento do LlamaIndex
-            llama_doc = Document(
-                text=texto_completo,
-                doc_id=str(doc.id),  # Converter para string
+            # Truncar para o limite do modelo de embedding
+            tokens = tokenizer.encode(texto_limpo, add_special_tokens=True)
+            if len(tokens) > 1024:
+                tokens_truncados = tokens[:1024]
+                texto_processado = tokenizer.decode(tokens_truncados, skip_special_tokens=True)
+                textos_truncados += 1
+            else:
+                texto_processado = texto_limpo
+
+            node = TextNode(
+                text=texto_processado,
+                id_=str(doc.id),
                 metadata={
                     "id": doc.id,
                     "enunciado": doc.enunciado,
-                    "excerto": doc.excerto
+                    "excerto": doc.excerto,
+                    "titulo": doc.enunciado[:100] + "..." if len(doc.enunciado) > 100 else doc.enunciado
                 }
             )
-            bm25_docs.append(llama_doc)
+            nodes.append(node)
         
-        # Configurar BM25 com parâmetros específicos
-        self._configurar_bm25(bm25_docs)
+        print(f"✓ {len(nodes)} nós de texto compartilhados criados (a partir do 'enunciado')")
+        if textos_truncados > 0:
+            print(f"  - {textos_truncados} textos foram truncados para 1024 tokens.")
+
+        # 2. Configurar BM25 usando os nós compartilhados
+        self._configurar_bm25(nodes)
         
-        # Configurar embeddings se disponível
+        # 3. Configurar Embeddings usando os nós compartilhados
         if self.embeddings_model:
-            self._configurar_embeddings(documentos)
+            self._configurar_embeddings(nodes)
         
-        # Configurar retrievers do LlamaIndex
+        # 4. Configurar o retriever híbrido
         self._configurar_retrievers_llama()
     
-    def _configurar_bm25(self, documentos: List[Document]):
-        """Configura o retriever BM25 com parâmetros específicos k1=1.2, b=0.75"""
+    def _configurar_bm25(self, nodes: List[TextNode]):
+        """Configura o retriever BM25 a partir de nós pré-criados."""
         try:
-            # Converter documentos em nodes (um documento = um node)
-            # Não usar splitter para manter integridade do documento e evitar duplicação
-            
-            nodes = []
-            for doc in documentos:
-                node = TextNode(
-                    text=doc.text,
-                    metadata=doc.metadata,
-                    id_=doc.doc_id
-                )
-                nodes.append(node)
-            
-            # Criar BM25 retriever customizado com parâmetros específicos
             self.bm25_retriever = BM25RetrieverCustom(
                 nodes=nodes,
                 tokenizer=self.preprocessador.tokenizador_pt_remove_html,
                 similarity_top_k=10,
-                k1=1.2,  # Parâmetro específico solicitado
-                b=0.75   # Parâmetro específico solicitado
+                k1=1.2,
+                b=0.75
             )
-            
             print("✓ BM25 retriever configurado com sucesso")
-            print("  - Parâmetros: k1=1.2, b=0.75 (customizados)")
-            print("  - Preprocessamento: tokenizador_pt_remove_html")
-            print("  - Campos: enunciado + excerto")
-            print(f"  - Nodes criados: {len(nodes)} (1 documento = 1 node)")
+            print("  - Parâmetros: k1=1.2, b=0.75")
+            print("  - Fonte: Nós compartilhados (apenas 'enunciado')")
             
         except Exception as e:
             print(f"✗ Erro ao configurar BM25: {e}")
@@ -153,71 +154,20 @@ class BuscadorHibridoLlamaIndex:
         except Exception as e:
             print(f"Erro ao configurar retrievers do LlamaIndex: {e}")
         
-    def _configurar_embeddings(self, documentos: List[DocumentoJuris]):
-        """Configura o retriever de embeddings com truncamento para 1024 tokens"""
+    def _configurar_embeddings(self, nodes: List[TextNode]):
+        """Configura o retriever de embeddings a partir de nós pré-criados."""
         try:
-            # Configurar tokenizer customizado para o modelo BERT português
-            from transformers import AutoTokenizer
-            
-            class CustomTokenizer:
-                def __init__(self, model_name):
-                    self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-                
-                def encode(self, text):
-                    return self.tokenizer.encode(text, add_special_tokens=True)
-                
-                def decode(self, tokens):
-                    return self.tokenizer.decode(tokens, skip_special_tokens=True)
-            
-            # Configurar Settings do LlamaIndex para o modelo de embedding português (1024 tokens max)
+            # Configurar Settings do LlamaIndex para o modelo de embedding
             Settings.embed_model = self.embeddings_model
+            Settings.chunk_size = 1024
+            Settings.chunk_overlap = 0
             
-            # Criar instância do tokenizer para uso local
-            tokenizer_local = CustomTokenizer("stjiris/bert-large-portuguese-cased-legal-mlm-sts-v1.0")
-            
-            Settings.chunk_size = 1024    # Limite real do modelo
-            Settings.chunk_overlap = 0    # Sem overlap já que não queremos chunks
-            Settings.context_window = 1024  # Janela de contexto do modelo
-            
-            # Criar documentos do LlamaIndex para embeddings (apenas enunciado)
-            embedding_docs = []
-            textos_truncados = 0
-            
-            for doc in documentos:
-                # Para embeddings: apenas enunciado sem HTML
-                texto_limpo = self.preprocessador.remove_html(doc.enunciado)
-                
-                # Contar tokens reais usando o tokenizer do modelo
-                tokens = tokenizer_local.encode(texto_limpo)
-                
-                # Truncar se exceder o limite de tokens
-                if len(tokens) > 1024:
-                    # Truncar tokens e decodificar de volta para texto
-                    tokens_truncados = tokens[:1024]
-                    texto_truncado = tokenizer_local.decode(tokens_truncados)
-                    textos_truncados += 1
-                else:
-                    texto_truncado = texto_limpo
-                
-                # Metadados simplificados
-                metadata_simples = {
-                    "id": doc.id,
-                    "titulo": doc.enunciado[:100] + "..." if len(doc.enunciado) > 100 else doc.enunciado
-                }
-                
-                llama_doc = Document(
-                    text=texto_truncado,
-                    doc_id=str(doc.id),  # Converter para string
-                    metadata=metadata_simples
-                )
-                embedding_docs.append(llama_doc)
-            
-            # Criar índice vetorial
+            # Criar índice vetorial a partir dos nós existentes
             vector_store = SimpleVectorStore()
             storage_context = StorageContext.from_defaults(vector_store=vector_store)
             
-            self.vector_index = VectorStoreIndex.from_documents(
-                embedding_docs,
+            self.vector_index = VectorStoreIndex(
+                nodes=nodes,  # Usar os nós compartilhados
                 storage_context=storage_context
             )
             
@@ -226,12 +176,8 @@ class BuscadorHibridoLlamaIndex:
             )
             
             print("✓ Vector retriever configurado com sucesso")
-            print("  - Modelo: Embedding português jurídico (1024 tokens max)")
-            print("  - Preprocessamento: remoção de HTML + truncamento")
-            print("  - Campos: apenas enunciado")
-            print(f"  - Textos truncados: {textos_truncados}/{len(documentos)}")
-            print(f"  - Chunk size: {Settings.chunk_size} (alto para evitar chunking)")
-            print("  - Estratégia: truncamento ao invés de chunking")
+            print("  - Modelo: Embedding português jurídico")
+            print("  - Fonte: Nós compartilhados (apenas 'enunciado')")
             
         except Exception as e:
             print(f"✗ Erro ao configurar embeddings: {e}")
@@ -315,127 +261,100 @@ class BuscadorHibridoLlamaIndex:
     
     def buscar_hibrido(self, consulta: str, top_k: int = 10) -> List[Dict]:
         """
-        Realiza busca híbrida usando Reciprocal Rank Fusion (RRF) corretamente implementado.
-        
-        RRF combina rankings de BM25 e Vector usando a fórmula:
-        score = Σ 1/(rank + k) onde k=60 (constante padrão)
-        
+        Realiza busca híbrida usando o QueryFusionRetriever (RRF).
+        O retriever já foi configurado para usar os nós compartilhados, eliminando duplicatas.
+
         Args:
-            consulta: Consulta de busca
-            top_k: Número de resultados a retornar
-            
+            consulta: Consulta de busca.
+            top_k: Número de resultados a retornar.
+
         Returns:
-            Lista de resultados ordenados por score RRF
+            Lista de resultados únicos ordenados pelo score do RRF.
         """
-        print(f"\n=== BUSCA HÍBRIDA RRF ===")
+        print(f"\n=== BUSCA HÍBRIDA com QueryFusionRetriever ===")
         print(f"Consulta: {consulta}")
-        print(f"Top K solicitado: {top_k}")
-        
-        # Obter resultados de ambos os métodos
+
+        if not self.hybrid_retriever:
+            print("⚠ Hybrid retriever (QueryFusionRetriever) não está configurado.")
+            # Fallback para RRF manual se o retriever híbrido falhar na configuração
+            return self._buscar_hibrido_manual_rrf(consulta, top_k)
+
+        try:
+            # Usar o QueryFusionRetriever que já aplica RRF e lida com duplicatas
+            retrieved_nodes = self.hybrid_retriever.retrieve(consulta)
+
+            print(f"QueryFusionRetriever retornou {len(retrieved_nodes)} nós únicos.")
+
+            # Formatar os resultados para o padrão esperado
+            resultados_formatados = []
+            for node in retrieved_nodes[:top_k]:
+                resultado = {
+                    "id": node.metadata.get("id"),
+                    "titulo": node.metadata.get("titulo", ""),
+                    "conteudo": node.text,
+                    "score": node.score,
+                    "metodo": "Híbrido (QueryFusionRetriever)",
+                    "metadata": {
+                        "enunciado": node.metadata.get("enunciado", ""),
+                        "excerto": node.metadata.get("excerto", ""),
+                    }
+                }
+                resultados_formatados.append(resultado)
+            
+            print(f"Retornando os {len(resultados_formatados)} melhores resultados.")
+            return resultados_formatados
+
+        except Exception as e:
+            print(f"✗ Erro na busca híbrida com QueryFusionRetriever: {e}")
+            print("    Fallback para busca híbrida com RRF manual.")
+            return self._buscar_hibrido_manual_rrf(consulta, top_k)
+
+    def _buscar_hibrido_manual_rrf(self, consulta: str, top_k: int = 10) -> List[Dict]:
+        """
+        Fallback: Realiza busca híbrida com RRF manual. Usado apenas se o QueryFusionRetriever falhar.
+        """
+        print("--- Fallback para RRF Manual ---")
         bm25_results = self.buscar_bm25(consulta, top_k=top_k)
         vector_results = self.buscar_embeddings(consulta, top_k=top_k)
         
-        print(f"\n--- Resultados BM25 ---")
-        print(f"BM25 retornou {len(bm25_results)} resultados")
-        for i, result in enumerate(bm25_results, 1):
-            print(f"  {i}. ID: {result['id']} | Score: {result['score']:.4f}")
-        
-        print(f"\n--- Resultados Vector ---")
-        print(f"Vector retornou {len(vector_results)} resultados")
-        for i, result in enumerate(vector_results, 1):
-            print(f"  {i}. ID: {result['id']} | Score: {result['score']:.4f}")
-        
-        # Implementar RRF corretamente
-        k = 60  # Constante padrão do RRF
+        k = 60
         rrf_scores = {}
-        
+
         # Processar resultados BM25
-        for rank, result in enumerate(bm25_results, 1):  # rank começa em 1
+        for rank, result in enumerate(bm25_results, 1):
             doc_id = result['id']
-            rrf_score = 1.0 / (rank + k)
-            
             if doc_id not in rrf_scores:
-                rrf_scores[doc_id] = {
-                    'id': doc_id,
-                    'rrf_score': 0.0,
-                    'texto': result['texto_completo'],
-                    'enunciado': result['enunciado'],
-                    'excerto': result['excerto'],
-                    'bm25_rank': None,
-                    'vector_rank': None,
-                    'bm25_score': None,
-                    'vector_score': None
-                }
-            
-            rrf_scores[doc_id]['rrf_score'] += rrf_score
-            rrf_scores[doc_id]['bm25_rank'] = rank
-            rrf_scores[doc_id]['bm25_score'] = result['score']
-        
+                rrf_scores[doc_id] = {'score': 0.0, 'details': result}
+            rrf_scores[doc_id]['score'] += 1.0 / (rank + k)
+
         # Processar resultados Vector
-        for rank, result in enumerate(vector_results, 1):  # rank começa em 1
+        for rank, result in enumerate(vector_results, 1):
             doc_id = result['id']
-            rrf_score = 1.0 / (rank + k)
-            
             if doc_id not in rrf_scores:
-                rrf_scores[doc_id] = {
-                    'id': doc_id,
-                    'rrf_score': 0.0,
-                    'texto': result['texto_completo'],
-                    'enunciado': result['enunciado'],
-                    'excerto': result['excerto'],
-                    'bm25_rank': None,
-                    'vector_rank': None,
-                    'bm25_score': None,
-                    'vector_score': None
-                }
-            
-            rrf_scores[doc_id]['rrf_score'] += rrf_score
-            rrf_scores[doc_id]['vector_rank'] = rank
-            rrf_scores[doc_id]['vector_score'] = result['score']
-            
-            # Se o texto do vector for mais completo, usar ele
-            if len(result['texto_completo']) > len(rrf_scores[doc_id]['texto']):
-                rrf_scores[doc_id]['texto'] = result['texto_completo']
-                rrf_scores[doc_id]['enunciado'] = result['enunciado']
-                rrf_scores[doc_id]['excerto'] = result['excerto']
+                rrf_scores[doc_id] = {'score': 0.0, 'details': result}
+            rrf_scores[doc_id]['score'] += 1.0 / (rank + k)
+
+        sorted_results = sorted(rrf_scores.items(), key=lambda item: item[1]['score'], reverse=True)
         
-        print(f"\n--- RRF Fusion (k={k}) ---")
-        print(f"Documentos únicos encontrados: {len(rrf_scores)}")
-        
-        # Ordenar por score RRF (maior para menor)
-        resultados_finais = sorted(rrf_scores.values(), key=lambda x: x['rrf_score'], reverse=True)
-        
-        # Limitar ao top_k solicitado
-        resultados_finais = resultados_finais[:top_k]
-        
-        # Mostrar detalhes do RRF
-        for i, result in enumerate(resultados_finais, 1):
-            bm25_info = f"BM25 Rank: {result['bm25_rank']}" if result['bm25_rank'] else "BM25: N/A"
-            vector_info = f"Vector Rank: {result['vector_rank']}" if result['vector_rank'] else "Vector: N/A"
-            print(f"  {i}. ID: {result['id']} | RRF Score: {result['rrf_score']:.6f} | {bm25_info} | {vector_info}")
-        
-        # Converter para formato de saída padrão
+        # Formatar para o padrão de saída
         resultados_formatados = []
-        for result in resultados_finais:
-            resultado_formatado = {
-                "id": result['id'],
-                "titulo": result['enunciado'][:100] + "..." if len(result['enunciado']) > 100 else result['enunciado'],
-                "conteudo": result['texto'],
-                "score": result['rrf_score'],
-                "metodo": "Híbrido (RRF)",
+        for doc_id, data in sorted_results[:top_k]:
+            details = data['details']
+            resultado = {
+                "id": doc_id,
+                "titulo": details['enunciado'][:100] + "...",
+                "conteudo": details['texto_completo'],
+                "score": data['score'],
+                "metodo": "Híbrido (RRF Manual Fallback)",
                 "metadata": {
-                    "enunciado": result['enunciado'],
-                    "excerto": result['excerto'],
-                    "bm25_rank": result['bm25_rank'],
-                    "vector_rank": result['vector_rank'],
-                    "bm25_score": result['bm25_score'],
-                    "vector_score": result['vector_score']
+                    "enunciado": details['enunciado'],
+                    "excerto": details['excerto']
                 }
             }
-            resultados_formatados.append(resultado_formatado)
-        
+            resultados_formatados.append(resultado)
+            
         return resultados_formatados
-    
+
     def avaliar_performance(self, query: str) -> Dict[str, Any]:
         """
         Avalia a performance dos diferentes métodos de busca
