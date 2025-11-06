@@ -238,46 +238,6 @@ def testar_configuracoes_hibridas():
         for i, resultado in enumerate(resultados, 1):
             print(f"  {i}. ID: {resultado['id']} | Score: {resultado['score']:.4f}")
 
-def main():
-    """Função principal que executa todos os testes"""
-    print("🚀 Iniciando testes do Sistema de Busca Híbrida LlamaIndex")
-    print(f"📍 Diretório atual: {os.getcwd()}")
-    
-    # Verificar configuração de embeddings
-    print("✅ Embeddings locais configurados - Modelo português jurídico disponível")
-    print("   Modelo: stjiris/bert-large-portuguese-cased-legal-mlm-sts-v1.0")
-    
-    try:
-        # Teste 1: Dados de exemplo
-        testar_com_dados_exemplo()
-        
-        # Teste 2: Dados reais
-        testar_com_dados_reais()
-        
-        # Teste 3: Configurações híbridas (se embeddings disponíveis)
-        testar_configuracoes_hibridas()
-        
-        print("\n" + "=" * 60)
-        print("✅ TODOS OS TESTES CONCLUÍDOS COM SUCESSO!")
-        print("=" * 60)
-        
-        # Resumo final
-        print("\n📋 Resumo dos Testes:")
-        print("  ✓ Busca BM25 com preprocessamento tokenizador_pt_remove_html")
-        print("  ✓ Configuração BM25: apenas enunciado")
-        print("  ✓ Configuração Embeddings: apenas enunciado (sem HTML)")
-        print("  ✓ Busca híbrida com diferentes pesos")
-        print("  ✓ Teste com dados reais do jurisTCU (100 documentos)")
-        print("  ✓ Métricas de performance")
-        
-        if not os.getenv("GOOGLE_API_KEY"):
-            print("\n💡 Sistema configurado com embedding português jurídico local")
-        
-    except Exception as e:
-        print(f"\n❌ Erro durante os testes: {e}")
-        import traceback
-        traceback.print_exc()
-
 def testar_reranker_com_dados_reais():
     """Testa a integração do Reranker com a busca híbrida usando dados reais."""
     print("\n" + "=" * 60)
@@ -298,9 +258,6 @@ def testar_reranker_com_dados_reais():
     print("-" * 50)
 
     # 1. Buscar sem Reranker (apenas RRF)
-    # Desativar temporariamente o reranker para obter os resultados brutos do RRF
-    modelo_reranker_original = buscador.reranker_model
-    buscador.reranker_model = None 
     print("\n📊 Resultados Híbridos (RRF - antes do Reranking):")
     resultados_sem_reranker = buscador.buscar_hibrido(query, top_k=5)
     if resultados_sem_reranker:
@@ -308,13 +265,10 @@ def testar_reranker_com_dados_reais():
             print(f"  {i}. ID: {res['id']} | Score RRF: {res['score']:.4f}")
     else:
         print("  Nenhum resultado encontrado.")
-    
-    # Reativar o reranker
-    buscador.reranker_model = modelo_reranker_original
 
     # 2. Buscar com Reranker
     print("\n✨ Resultados Híbridos (com Reranker):")
-    resultados_com_reranker = buscador.buscar_hibrido(query, top_k=5)
+    resultados_com_reranker = buscador.buscar_hibrido(query, top_k=5, use_reranker=True)
     if resultados_com_reranker:
         for i, res in enumerate(resultados_com_reranker, 1):
             print(f"  {i}. ID: {res['id']} | Score Rerank: {res['score']:.4f} | Método: {res['metodo']}")

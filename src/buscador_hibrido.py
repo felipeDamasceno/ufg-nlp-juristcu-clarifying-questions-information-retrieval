@@ -279,7 +279,7 @@ class BuscadorHibridoLlamaIndex:
             print(f"✗ Erro na busca por embeddings: {e}")
             return []
     
-    def buscar_hibrido(self, consulta: str, top_k: int = 10) -> List[Dict]:
+    def buscar_hibrido(self, consulta: str, top_k: int = 10, use_reranker: bool = False) -> List[Dict]:
         """
         Realiza busca híbrida usando o QueryFusionRetriever (RRF).
         O retriever já foi configurado para usar os nós compartilhados, eliminando duplicatas.
@@ -287,6 +287,7 @@ class BuscadorHibridoLlamaIndex:
         Args:
             consulta: Consulta de busca.
             top_k: Número de resultados a retornar.
+            use_reranker: Se True, usa o reranker para melhorar os resultados.
 
         Returns:
             Lista de resultados únicos ordenados pelo score do RRF.
@@ -296,8 +297,6 @@ class BuscadorHibridoLlamaIndex:
 
         if not self.hybrid_retriever:
             print("⚠ Hybrid retriever (QueryFusionRetriever) não está configurado.")
-            # Fallback para RRF manual se o retriever híbrido falhar na configuração
-            return self._buscar_hibrido_manual_rrf(consulta, top_k)
 
         try:
             # Usar o QueryFusionRetriever que já aplica RRF e lida com duplicatas
@@ -305,8 +304,8 @@ class BuscadorHibridoLlamaIndex:
 
             print(f"QueryFusionRetriever retornou {len(retrieved_nodes)} nós únicos.")
 
-            # Aplicar Reranking se o modelo estiver disponível
-            if self.reranker_model:
+            # Aplicar Reranking se o modelo estiver disponível e use_reranker for True
+            if self.reranker_model and use_reranker:
                 retrieved_nodes = self._rerank_nodes(consulta, retrieved_nodes, top_n=top_k)
 
             # Formatar os resultados para o padrão esperado
@@ -317,7 +316,7 @@ class BuscadorHibridoLlamaIndex:
                     "titulo": node.metadata.get("titulo", ""),
                     "conteudo": node.text,
                     "score": node.score,
-                    "metodo": "Híbrido (RRF + Reranker)" if self.reranker_model else "Híbrido (QueryFusionRetriever)",
+                    "metodo": "Híbrido (RRF + Reranker)" if use_reranker else "Híbrido (QueryFusionRetriever)",
                     "metadata": {
                         "enunciado": node.metadata.get("enunciado", ""),
                         "excerto": node.metadata.get("excerto", ""),
