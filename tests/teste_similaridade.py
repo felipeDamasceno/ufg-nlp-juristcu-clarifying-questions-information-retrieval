@@ -1,10 +1,10 @@
 import sys
 import os
 
-# Adicionar o diretório src ao sys.path para encontrar os módulos
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+# Adicionar o diretório raiz do projeto ao sys.path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from buscador_hibrido import BuscadorHibridoLlamaIndex
+from src.buscador_hibrido import BuscadorHibridoLlamaIndex
 
 def teste_calculo_similaridade():
     """
