@@ -28,6 +28,10 @@ from typing import List, Dict, Any, Optional, Tuple
 from src.similaridade import calcular_similaridade_entre_pares as calcular_similaridade_pares
 from src.reranking import rerank_nodes
 
+from dotenv import load_dotenv
+
+# Carregar variáveis de ambiente do arquivo .env
+load_dotenv()
 
 class BuscadorHibridoLlamaIndex:
     """

@@ -19,3 +19,6 @@ faiss-cpu==1.12.0  # Para busca vetorial mais eficiente (opcional)
 # Para baixar o dataset com script utils/download_juris_tcu.py
 huggingface-hub==1.0.1
 
+# Integração com Google Gemini para geração de perguntas clarificadoras
+google-generativeai
+
