@@ -44,7 +44,7 @@ def _gerar_via_gemini(prompt: str) -> Dict[str, str]:
     configurar_gemini()
 
     # Permite customizar o nome do modelo via env; define um padrão se não houver.
-    model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.0-flash")
+    model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash-lite")
     try:
         # Configuração para forçar saída JSON, e tentar schema estruturado
         schema = {

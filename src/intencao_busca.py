@@ -52,7 +52,7 @@ def gerar_intencao_busca(query_text: str, docs_ideais: List[str]) -> Dict[str, s
     """
     configurar_gemini()
 
-    model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.0-flash")
+    model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash-lite")
 
     # Schema de saída JSON estruturado
     schema = {
