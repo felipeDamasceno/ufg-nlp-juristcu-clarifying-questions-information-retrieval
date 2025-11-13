@@ -2,7 +2,6 @@ from typing import List, Dict, Optional
 import os
 import json
 
-# Tentativa de importar o SDK do Gemini; mantemos fallback se indisponível
 try:
     import google.generativeai as genai  # type: ignore
     _HAS_GEMINI = True
@@ -10,40 +9,12 @@ except Exception:
     _HAS_GEMINI = False
 
 from src.similaridade import _texto_do_resultado
+from src.utils.gemini import configurar_gemini, strip_code_fences, extrair_texto_resposta
 
 from dotenv import load_dotenv
 
 # Carregar variáveis de ambiente do arquivo .env
 load_dotenv()
-
-def _configurar_gemini() -> None:
-    """
-    Configura o cliente Gemini usando a variável de ambiente GOOGLE_API_KEY.
-    Levanta RuntimeError se não estiver configurado corretamente.
-    """
-    if not _HAS_GEMINI:
-        raise RuntimeError("Pacote 'google-generativeai' não está instalado. Execute 'pip install -r requirements.txt'.")
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        raise RuntimeError("Variável de ambiente 'GOOGLE_API_KEY' não definida. Configure sua chave da API Gemini.")
-    try:
-        genai.configure(api_key=api_key)
-    except Exception as e:
-        raise RuntimeError(f"Falha ao configurar o cliente Gemini: {e}")
-
-
-def _strip_code_fences(text: str) -> str:
-    """Remove cercas de código Markdown (``` e ```json) do texto, se presentes."""
-    s = text.strip()
-    if s.startswith("```"):
-        # Remove a primeira linha (``` ou ```json)
-        first_newline = s.find("\n")
-        if first_newline != -1:
-            s = s[first_newline + 1:]
-        # Remove fechamento final ``` se presente
-        if s.endswith("```"):
-            s = s[:-3]
-    return s.strip()
 
 
 def _formatar_prompt(conversa: str, caso1: str, caso2: str) -> str:
@@ -70,7 +41,7 @@ def _gerar_via_gemini(prompt: str) -> Dict[str, str]:
     { 'full_text': <resposta bruta do modelo>, 'question': <pergunta extraída> }.
     Levanta RuntimeError em caso de falha.
     """
-    _configurar_gemini()
+    configurar_gemini()
 
     # Permite customizar o nome do modelo via env; define um padrão se não houver.
     model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.0-flash")
@@ -92,24 +63,13 @@ def _gerar_via_gemini(prompt: str) -> Dict[str, str]:
         except Exception as e:
             raise RuntimeError(f"Falha ao gerar conteúdo com Gemini: {e}")
 
-        # Tenta extrair de candidatos, se disponível
-        full_text = None
-        parts = getattr(resp, "candidates", [])
-        if parts:
-            for cand in parts:
-                content = getattr(cand, "content", None)
-                if content and getattr(content, "parts", None):
-                    for p in content.parts:
-                        text = getattr(p, "text", None)
-                        if text:
-                            full_text = text.strip()
-                            break
-        # Se não encontrou texto
+        # Extrai texto da resposta usando utilitário compartilhado
+        full_text = extrair_texto_resposta(resp)
         if full_text is None:
             raise RuntimeError("Resposta do Gemini não contém texto gerado.")
 
         # Normaliza: remove cercas de código se houver
-        full_text = _strip_code_fences(full_text)
+        full_text = strip_code_fences(full_text)
 
         # Tenta fazer parsing do JSON e extrair 'question'
         try:

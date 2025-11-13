@@ -13,10 +13,10 @@ Opcional:
 """
 
 import os
-import csv
 import random
 import re
-from typing import Dict, List, Tuple
+from typing import Dict, List
+import pandas as pd
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -28,67 +28,35 @@ DOC_CSV = os.path.join(DATA_DIR, "doc.csv")
 
 
 def _load_queries(path: str) -> List[Dict[str, str]]:
-    with open(path, "r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        rows = [
-            {"ID": row.get("ID", ""), "TEXT": row.get("TEXT", ""), "SOURCE": row.get("SOURCE", "")}
-            for row in reader
-        ]
-    return rows
+    df = pd.read_csv(path, dtype=str, encoding="utf-8")
+    df = df.fillna("")
+    return df[["ID", "TEXT", "SOURCE"]].to_dict(orient="records")
 
 
 def _load_qrels(path: str) -> Dict[int, List[Dict[str, str]]]:
-    """Carrega qrels e agrupa por QUERY_ID, ordenando por RANK."""
-    by_query: Dict[int, List[Dict[str, str]]] = {}
-    with open(path, "r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            try:
-                qid = int(row.get("QUERY_ID", ""))
-                doc_id = int(row.get("DOC_ID", ""))
-            except ValueError:
-                continue
-            score_str = row.get("SCORE", "0")
-            rank_str = row.get("RANK", "999999")
-            try:
-                score = int(score_str)
-            except ValueError:
-                try:
-                    score = float(score_str)
-                except ValueError:
-                    score = 0
-            try:
-                rank = int(rank_str)
-            except ValueError:
-                rank = 999999
-            by_query.setdefault(qid, []).append({
-                "DOC_ID": doc_id,
-                "SCORE": score,
-                "RANK": rank,
-            })
+    """Carrega qrels e agrupa por QUERY_ID, ordenando por RANK usando pandas."""
+    df = pd.read_csv(path, encoding="utf-8")
+    df["QUERY_ID"] = pd.to_numeric(df["QUERY_ID"], errors="coerce")
+    df["DOC_ID"] = pd.to_numeric(df["DOC_ID"], errors="coerce")
+    df["SCORE"] = pd.to_numeric(df["SCORE"], errors="coerce").fillna(0)
+    df["RANK"] = pd.to_numeric(df["RANK"], errors="coerce").fillna(999999)
+    df = df.dropna(subset=["QUERY_ID", "DOC_ID"]).astype({"QUERY_ID": int, "DOC_ID": int, "RANK": int})
+    df = df.sort_values("RANK")
 
-    # Ordena cada lista por rank crescente
-    for qid, items in by_query.items():
-        items.sort(key=lambda x: x["RANK"])
+    by_query: Dict[int, List[Dict[str, str]]] = {}
+    for qid, group in df.groupby("QUERY_ID"):
+        by_query[int(qid)] = group[["DOC_ID", "SCORE", "RANK"]].to_dict(orient="records")
     return by_query
 
 
 def _load_docs_enunciado_by_numeric_key(path: str) -> Dict[int, str]:
-    """Cria um mapa DOC_ID (número) -> ENUNCIADO, extraindo o sufixo numérico da coluna KEY."""
-    mapping: Dict[int, str] = {}
-    with open(path, "r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            key = row.get("KEY", "")
-            enunciado = row.get("ENUNCIADO", "") or ""
-            m = re.search(r"(\d+)$", str(key))
-            if not m:
-                continue
-            try:
-                numeric_id = int(m.group(1))
-            except ValueError:
-                continue
-            mapping[numeric_id] = enunciado
+    """Cria um mapa DOC_ID (número) -> ENUNCIADO usando pandas."""
+    df = pd.read_csv(path, dtype=str, encoding="utf-8")
+    df = df.fillna("")
+    df["NUM"] = df["KEY"].astype(str).str.extract(r"(\d+)$")
+    df["NUM"] = pd.to_numeric(df["NUM"], errors="coerce")
+    df = df.dropna(subset=["NUM"]).astype({"NUM": int})
+    mapping = df.set_index("NUM")["ENUNCIADO"].to_dict()
     return mapping
 
 
