@@ -17,21 +17,27 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def _formatar_prompt(conversa: str, caso1: str, caso2: str) -> str:
-    """
-    Formata o prompt conforme o template solicitado pelo usuário.
-    """
+# Supondo que seu código estava dentro de uma função como no traceback
+def _formatar_prompt(conversa, caso1, caso2):
     return (
-        "You are now a knowledgeable judge in law. The current conversation between you and the user\n"
-        f"is as follows: [{conversa}]. Based on the above conversation, what clarifying question can\n"
-        "you ask to further understand the background information of the case?\n"
-        "Specifically, there are similar cases with the following circumstances: Case 1: "
-        f"[{caso1}]. Case 2: [{caso2}].\n"
-        "Identify the differences between Case 1 and Case 2, and generate the clarifying question\n"
-        "based on the differences in Portuguese Brazil.\n\n"
-        "Return ONLY a single-line JSON object with the following structure:\n"
-        "{\"question\": \"<uma pergunta clara em PT-BR, uma frase>\", \"rationale\": \"<diferenciação entre o caso 1 e o caso 2 e racional por traz da pergunta gerada>\"}.\n"
-        "Do not include anything else besides the JSON."
+        f"""
+You are now a knowledgeable judge in law. The current conversation is: [{conversa}].
+
+Based on the user's query, an initial search returned two similar, but distinct, documents:
+Document 1: [{caso1}]
+Document 2: [{caso2}]
+
+Your task is to:
+1.  **Analyze** and identify the **single most important difference** (factual or legal) between Document 1 and Document 2.
+2.  Based **solely** on that key difference, generate a single, clear clarifying question **in Brazilian Portuguese (PT-BR)**.
+
+The goal of this question is to help the user specify their intent, allowing you to understand which document's context is more relevant to their situation.
+
+Return ONLY a single-line JSON object with the following structure:
+{{"question": "<uma pergunta clara em PT-BR, uma frase>", "rationale": "<A diferenciação principal entre o caso 1 e o caso 2 e o racional por trás da pergunta gerada>"}}
+
+Do not include anything else besides the JSON.
+"""
     )
 
 

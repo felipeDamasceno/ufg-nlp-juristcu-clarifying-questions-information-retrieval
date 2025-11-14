@@ -7,7 +7,6 @@ Função principal:
 Retorna dicionário com:
     - full_text: resposta completa do modelo (JSON em string)
     - intent: intenção de busca extraída
-    - rationale: (opcional) justificativa se presente
 """
 
 from typing import List, Dict
@@ -39,8 +38,11 @@ def _formatar_prompt_intencao(query_text: str, docs_ideais: List[str]) -> str:
         f"Pergunta: {query_text}\n"
         "Documentos ideais:\n"
         f"{bullets}\n\n"
-        "Com base nisso, escreva a intenção de pergunta/busca do usuário de forma detalhada sem informar a exata lei ou artigo:\n"
-        "{\"intent\": \"<Intensão de busca em detalhes em PT-BR>\", \"rationale\": \"<por que esta é a intenção com base nos docs>\"}"
+        "Com base nisso, descreva a NECESSIDADE DE INFORMAÇÃO da busca (o que o usuário deseja localizar nos resultados).\n"
+        "Use TODOS os pontos relevantes dos documentos ideais para articular claramente o que os resultados devem cobrir (tópicos, condições, escopo, exceções).\n"
+        "Não cite leis/artigos específicos; foque no conteúdo informativo que deve estar presente nas respostas.\n"
+        "Retorne APENAS um JSON de uma linha com o formato:\n"
+        "{\"intent\": \"<Descrição detalhada da necessidade de informação em PT-BR>\"}"
     )
 
 
@@ -59,7 +61,6 @@ def gerar_intencao_busca(query_text: str, docs_ideais: List[str]) -> Dict[str, s
         "type": "object",
         "properties": {
             "intent": {"type": "string"},
-            "rationale": {"type": "string"},
         },
         "required": ["intent"],
     }
@@ -85,11 +86,8 @@ def gerar_intencao_busca(query_text: str, docs_ideais: List[str]) -> Dict[str, s
         raise RuntimeError(f"Resposta do Gemini não está em JSON válido: {e}. Conteúdo: {full_text}")
 
     intent = data.get("intent")
-    rationale = data.get("rationale")
     if not intent or not isinstance(intent, str):
         raise RuntimeError(f"Campo 'intent' ausente ou inválido no JSON. Conteúdo: {full_text}")
 
     result: Dict[str, str] = {"full_text": full_text, "intent": intent.strip()}
-    if isinstance(rationale, str):
-        result["rationale"] = rationale.strip()
     return result
