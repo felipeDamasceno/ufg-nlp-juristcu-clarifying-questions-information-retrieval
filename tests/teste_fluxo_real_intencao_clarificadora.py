@@ -16,7 +16,7 @@ from src.resposta_clarificadora import responder_pergunta_clarificadora
 from src.utils.dados import load_qrels_df, load_docs_enunciado_map_clean
 
 
-OUTPUTS_CSV = os.path.join(BASE_DIR, "outputs", "query_intencao.csv")
+OUTPUTS_CSV = os.path.join(BASE_DIR, "dados", "query_intencao.csv")
 DATA_DIR = os.path.join(BASE_DIR, "dados", "juris_tcu")
 QREL_CSV = os.path.join(DATA_DIR, "qrel.csv")
 DOC_CSV = os.path.join(DATA_DIR, "doc.csv")
@@ -44,7 +44,7 @@ def main():
     # Carregar intenções do dataset gerado
     inten_df = _carregar_intencoes(OUTPUTS_CSV)
     if inten_df.empty:
-        print("✗ Nenhuma intenção válida encontrada em outputs/query_intencao.csv")
+        print("✗ Nenhuma intenção válida encontrada em dados/query_intencao.csv")
         return
 
     # Carregar qrels e mapa de enunciados limpos

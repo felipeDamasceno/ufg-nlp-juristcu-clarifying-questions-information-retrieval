@@ -4,5 +4,6 @@ __pycache__
 conf.txt
 .trae
 .env
-dados
+.cache
+index_cache
 anotacoes.txt

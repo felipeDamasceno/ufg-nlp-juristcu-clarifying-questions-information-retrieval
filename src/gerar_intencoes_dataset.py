@@ -2,7 +2,7 @@
 Gera a intenção de busca para TODAS as queries do dataset jurisTCU,
 usando o ENUNCIADO completo dos documentos com SCORE 3 (qrel.csv),
 removendo HTML via utilitário de preprocessamento, e salva um novo CSV
-em `outputs/query_intencao.csv` com a nova coluna `INTENCAO`.
+em `dados/query_intencao.csv` com a nova coluna `INTENCAO`.
 
 Execução:
     python src/gerar_intencoes_dataset.py
@@ -31,7 +31,7 @@ QUERY_CSV = os.path.join(DATA_DIR, "query.csv")
 QREL_CSV = os.path.join(DATA_DIR, "qrel.csv")
 DOC_CSV = os.path.join(DATA_DIR, "doc.csv")
 
-OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs")
+OUTPUTS_DIR = os.path.join(BASE_DIR, "dados")
 OUTPUT_CSV = os.path.join(OUTPUTS_DIR, "query_intencao.csv")
 
 import time
