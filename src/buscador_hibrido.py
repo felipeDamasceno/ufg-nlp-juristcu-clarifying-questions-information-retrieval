@@ -50,11 +50,10 @@ class BuscadorHibridoLlamaIndex:
         self.embeddings_model = None
         
         # Retrievers do LlamaIndex
-        self.llama_bm25_retriever = None
-        self.llama_vector_retriever = None
         self.hybrid_retriever = None
         self.reranker_model = None
         self.reranker_device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.hybrid_similarity_top_k = 10
 
         # Configurar modelo de embeddings português jurídico
         try:
@@ -162,15 +161,11 @@ class BuscadorHibridoLlamaIndex:
         try:
             # Configurar Vector Retriever se embeddings estão disponíveis
             if self.vector_retriever:
-                self.llama_vector_retriever = self.vector_retriever
-                
-                # Configurar Hybrid Retriever usando QueryFusionRetriever
-                # Combina nosso BM25 customizado (com k1 e b) com vector retriever
                 self.hybrid_retriever = QueryFusionRetriever(
-                    retrievers=[self.bm25_retriever, self.llama_vector_retriever],
-                    similarity_top_k=10,
-                    num_queries=1,  # Usar apenas a query original
-                    mode="reciprocal_rerank",  # Usar Reciprocal Rank Fusion
+                    retrievers=[self.bm25_retriever, self.vector_retriever],
+                    similarity_top_k=self.hybrid_similarity_top_k,
+                    num_queries=1,
+                    mode="reciprocal_rerank",
                     use_async=False
                 )
                 
@@ -320,14 +315,14 @@ class BuscadorHibridoLlamaIndex:
             resultados_formatados = []
             for node in retrieved_nodes[:top_k]:
                 resultado = {
-                    "id": node.metadata.get("id"),
-                    "titulo": node.metadata.get("titulo", ""),
-                    "conteudo": node.text,
-                    "score": node.score,
+                    "id": getattr(getattr(node, 'node', node), 'metadata', {}).get("id"),
+                    "titulo": getattr(getattr(node, 'node', node), 'metadata', {}).get("titulo", ""),
+                    "conteudo": getattr(getattr(node, 'node', node), 'text', None),
+                    "score": getattr(node, 'score', None),
                     "metodo": "Híbrido (RRF + Reranker)" if use_reranker else "Híbrido (QueryFusionRetriever)",
                     "metadata": {
-                        "enunciado": node.metadata.get("enunciado", ""),
-                        "excerto": node.metadata.get("excerto", ""),
+                        "enunciado": getattr(getattr(node, 'node', node), 'metadata', {}).get("enunciado", ""),
+                        "excerto": getattr(getattr(node, 'node', node), 'metadata', {}).get("excerto", ""),
                     }
                 }
                 resultados_formatados.append(resultado)
@@ -411,3 +406,24 @@ class BuscadorHibridoLlamaIndex:
             metricas["hibrido"] = {"disponivel": False}
         
         return metricas
+
+    def set_bm25_top_k(self, k: int):
+        if self.bm25_retriever:
+            try:
+                self.bm25_retriever.set_top_k(k)
+            except Exception:
+                pass
+
+    def set_embeddings_top_k(self, k: int):
+        try:
+            if hasattr(self, 'vector_index') and self.vector_index is not None:
+                self.vector_retriever = self.vector_index.as_retriever(similarity_top_k=k)
+        except Exception:
+            pass
+
+    def set_hibrido_top_k(self, k: int):
+        self.hybrid_similarity_top_k = k
+        try:
+            self._configurar_retrievers_llama()
+        except Exception:
+            pass

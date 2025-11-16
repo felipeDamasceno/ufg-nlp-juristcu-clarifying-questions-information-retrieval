@@ -47,5 +47,8 @@ class BM25RetrieverCustom(BaseRetriever):
         results = []
         for score, node in scored_nodes[:self._similarity_top_k]:
             results.append(NodeWithScore(node=node, score=score))
-        
+
         return results
+
+    def set_top_k(self, top_k: int):
+        self._similarity_top_k = top_k

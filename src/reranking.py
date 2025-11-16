@@ -1,9 +1,8 @@
-from typing import List
-from llama_index.core.schema import TextNode
+from typing import List, Any
 import torch
 
 
-def rerank_nodes(reranker_model, query: str, nodes: List[TextNode], top_n: int = 5) -> List[TextNode]:
+def rerank_nodes(reranker_model, query: str, nodes: List[Any], top_n: int = 5) -> List[Any]:
     """
     Aplica o reranking nos nós usando o modelo Jina Reranker (ou compatível).
 
@@ -22,7 +21,7 @@ def rerank_nodes(reranker_model, query: str, nodes: List[TextNode], top_n: int =
 
     # Atribuir novos scores
     for node, score in zip(nodes, scores):
-        node.score = score
+        node.score = float(score)
 
     # Ordenar por score desc
     reranked_nodes = sorted(nodes, key=lambda x: x.score, reverse=True)
