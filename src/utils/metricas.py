@@ -1,8 +1,5 @@
 import pandas as pd
 import math
-import matplotlib.pyplot as plt
-import seaborn as sns
-import numpy as np
 
 def precisao_recall(docs_retornados, docs_relevantes, k=None):
     """
@@ -161,7 +158,7 @@ def metricas(resultado_pesquisa, qrels,
 
     # Extrai as queries que devem ser analisadas. Se tiver query no resultado que não 
     # está no qrels, ela não será avaliada.
-    query_keys = qrels.QUERY_KEY.unique()
+    query_keys = qrels[col_qrels_query_key].unique()
 
     precisao_em_k = {valor_k: [0]*len(query_keys) for valor_k in k}
     recall_em_k = {valor_k: [0]*len(query_keys) for valor_k in k}
