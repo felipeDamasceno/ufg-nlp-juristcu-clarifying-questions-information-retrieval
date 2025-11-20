@@ -102,18 +102,17 @@ def main():
                 print(f"✗ Falha ao calcular similaridade entre pares: {e}")
                 pares_similares = []
             if pares_similares:
-                pergunta_ctx = qtext
-                try:
-                    perguntas = gerar_perguntas_clarificadoras_para_pares(
-                        pares_similares=pares_similares,
-                        pergunta=pergunta_ctx,
-                        max_perguntas=min(3, len(pares_similares)),
-                    )
-                except Exception as e:
-                    print(f"✗ Erro ao gerar perguntas: {e}")
-                    perguntas = []
-                for pidx, item in enumerate(perguntas[:3], start=1):
-                    pergunta = item.get("pergunta") or ""
+                for pidx, par in enumerate(pares_similares[:3], start=1):
+                    try:
+                        perguntas = gerar_perguntas_clarificadoras_para_pares(
+                            pares_similares=[par],
+                            conversa=conversa,
+                            max_perguntas=1,
+                        )
+                    except Exception as e:
+                        print(f"✗ Erro ao gerar perguntas (passo {pidx}): {e}")
+                        continue
+                    pergunta = (perguntas[0].get("pergunta") if perguntas else "")
                     print(f"\n[Passo {pidx}] Pergunta clarificadora: {pergunta}")
                     try:
                         resposta = responder_pergunta_clarificadora(intent_text, pergunta)

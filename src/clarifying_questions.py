@@ -18,10 +18,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def _formatar_prompt(pergunta, caso1, caso2):
+def _formatar_prompt(conversa, caso1, caso2):
     return (
         f"""
-Você agora é um juiz especializado em Direito. A pergunta original do usuário é: [{pergunta}].
+Você agora é um juiz especializado em Direito. A conversa atual é: [{conversa}].
 
 Com base na consulta do usuário, uma busca inicial retornou dois documentos semelhantes, porém distintos:
 Documento 1: [{caso1}]
@@ -158,7 +158,7 @@ def gerar_perguntas_sem_pares(pergunta: str, max_perguntas: int = 3) -> List[Dic
 
 def gerar_perguntas_clarificadoras_para_pares(
     pares_similares: List[Dict],
-    pergunta: str,
+    conversa: str,
     max_perguntas: int = 3,
 ) -> List[Dict]:
     """
@@ -166,7 +166,7 @@ def gerar_perguntas_clarificadoras_para_pares(
 
     Args:
         pares_similares: Lista de pares retornados por calcular_similaridade_entre_pares.
-        pergunta: Texto da pergunta original do usuário.
+        conversa: Texto da conversa atual com o usuário.
         max_perguntas: Quantidade máxima de perguntas a gerar (uma por par).
 
     Returns:
@@ -184,7 +184,7 @@ def gerar_perguntas_clarificadoras_para_pares(
         caso1 = _texto_do_resultado(doc1)
         caso2 = _texto_do_resultado(doc2)
 
-        prompt = _formatar_prompt(pergunta, caso1, caso2)
+        prompt = _formatar_prompt(conversa, caso1, caso2)
         resultado = _gerar_via_gemini(prompt)
         origem = "gemini"
 

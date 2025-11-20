@@ -105,14 +105,13 @@ def main():
             print("(Nenhum par com similaridade suficiente)")
             continue
 
-        pergunta_ctx = (
-            "Pergunta original do usuário, conforme necessidade de informação: " + intent_text
-        )
+        conversa_ctx = intent_text
+        
 
         try:
             perguntas = gerar_perguntas_clarificadoras_para_pares(
                 pares_similares=pares_similares,
-                pergunta=pergunta_ctx,
+                conversa=conversa_ctx,
                 max_perguntas=min(3, len(pares_similares)),
             )
         except RuntimeError as e:
