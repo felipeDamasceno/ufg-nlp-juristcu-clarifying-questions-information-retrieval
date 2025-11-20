@@ -21,20 +21,22 @@ load_dotenv()
 def _formatar_prompt(conversa, caso1, caso2):
     return (
         f"""
-Você agora é um juiz especializado em Direito. A conversa atual é: [{conversa}].
+Você é um assistente de IA especialista em Direito Brasileiro. A conversa atual é: [{conversa}].
 
-Com base na consulta do usuário, uma busca inicial retornou dois documentos semelhantes, porém distintos:
+Com base na conversa do usuário, uma busca inicial retornou dois documentos similares, mas distintos:
 Documento 1: [{caso1}]
 Documento 2: [{caso2}]
 
 Sua tarefa é:
-1. **Analisar** e identificar a **única diferença mais importante** (fática ou jurídica) entre o Documento 1 e o Documento 2.
-2. Com base **exclusivamente** nessa diferença-chave, gerar uma pergunta única e clara de esclarecimento **em português do Brasil (PT-BR)**.
+1. **Analisar** e identificar a **única diferença mais importante** (factual ou jurídica) entre o Documento 1 e o Documento 2.
+2. Com base **apenas** nessa diferença chave, gere uma única pergunta clarificadora clara em Português do Brasil.
 
-O objetivo dessa pergunta é ajudar o usuário a especificar sua intenção, permitindo entender qual contexto documental é mais relevante para a situação dele.
+OBJETIVO DA PERGUNTA:
+Ajudar o usuário a especificar melhor sua intenção, permitindo entender qual contexto (do Doc 1 ou Doc 2) é mais relevante para o caso dele.
+A pergunta NÃO deve mencionar "Documento 1" ou "Documento 2". A pergunta deve indagar sobre a situação ou necessidade específica do usuário.
 
-Retorne APENAS um objeto JSON de uma única linha com a seguinte estrutura:
-{{"question": "<uma pergunta clara em PT-BR, uma frase>", "rationale": "<A diferença principal entre o caso 1 e o caso 2 e o racional por trás da pergunta gerada>"}}
+Retorne APENAS um objeto JSON de linha única com a seguinte estrutura:
+{{"question": "<sua pergunta em PT-BR aqui>", "rationale": "<Explique brevemente a diferença chave identificada entre os casos e o porquê desta pergunta>"}}
 
 Não inclua nada além do JSON.
 """
