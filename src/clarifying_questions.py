@@ -17,26 +17,27 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-# Supondo que seu código estava dentro de uma função como no traceback
 def _formatar_prompt(pergunta, caso1, caso2):
     return (
         f"""
-You are now a knowledgeable judge in law. The user's original question is: [{pergunta}].
+Você é um assistente de IA especialista em Direito Brasileiro. A consulta original do usuário é: [{pergunta}].
 
-Based on the user's query, an initial search returned two similar, but distinct, documents:
-Document 1: [{caso1}]
-Document 2: [{caso2}]
+Com base na consulta do usuário, uma busca inicial retornou dois documentos similares, mas distintos:
+Documento 1: [{caso1}]
+Documento 2: [{caso2}]
 
-Your task is to:
-1.  **Analyze** and identify the **single most important difference** (factual or legal) between Document 1 and Document 2.
-2.  Based **solely** on that key difference, generate a single, clear clarifying question **in Brazilian Portuguese (PT-BR)**.
+Sua tarefa é:
+1. **Analisar** e identificar a **única diferença mais importante** (factual ou jurídica) entre o Documento 1 e o Documento 2.
+2. Com base **apenas** nessa diferença chave, gere uma única pergunta clarificadora clara em Português do Brasil.
 
-The goal of this question is to help the user specify their intent, allowing you to understand which document's context is more relevant to their situation.
+OBJETIVO DA PERGUNTA:
+Ajudar o usuário a especificar melhor sua intenção, permitindo entender qual contexto (do Doc 1 ou Doc 2) é mais relevante para o caso dele.
+A pergunta NÃO deve mencionar "Documento 1" ou "Documento 2". A pergunta deve indagar sobre a situação ou necessidade específica do usuário.
 
-Return ONLY a single-line JSON object with the following structure:
-{{"question": "<uma pergunta clara em PT-BR, uma frase>", "rationale": "<A diferenciação principal entre o caso 1 e o caso 2 e o racional por trás da pergunta gerada>"}}
+Retorne APENAS um objeto JSON de linha única com a seguinte estrutura:
+{{"question": "<sua pergunta em PT-BR aqui>", "rationale": "<Explique brevemente a diferença chave identificada entre os casos e o porquê desta pergunta>"}}
 
-Do not include anything else besides the JSON.
+Não inclua nada além do JSON.
 """
     )
 

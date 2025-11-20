@@ -34,14 +34,23 @@ def responder_pergunta_clarificadora(query_intencao: str, pergunta: str) -> str:
     configurar_gemini()
 
     prompt = (
-        "Você receberá um BACKGROUND (descrição da necessidade de informação da busca) e uma PERGUNTA.\n"
-        "Responda EXCLUSIVAMENTE com base no BACKGROUND: cite apenas afirmações explícitas nele.\n"
-        "Se a resposta NÃO estiver coberta pelo BACKGROUND, responda exatamente 'não sei'.\n"
-        "Não invente, não use conhecimento externo, não reinterprete.\n\n"
-        "BACKGROUND:\n" + str(query_intencao) + "\n\n"
-        "PERGUNTA:\n" + str(pergunta) + "\n\n"
+        "Você atua como um USUÁRIO realizando uma busca. Você receberá:\n"
+        "1. INTENÇÃO DE BUSCA (o que você quer descobrir/pesquisar).\n"
+        "2. PERGUNTA DO SISTEMA (uma pergunta feita para refinar sua busca).\n\n"
+        
+        "SUA TAREFA: Responder à PERGUNTA DO SISTEMA usando a INTENÇÃO DE BUSCA e apenas ela como guia.\n\n"
+        
+        "REGRAS DE RESPOSTA:\n"
+        "- O texto da INTENÇÃO DE BUSCA contém os tópicos que te interessam. NÃO trate esse texto como uma resposta pronta que você já sabe. Trate como o TEMA que você quer confirmar.\n"
+        "- Se a PERGUNTA tocar em um ponto que está explícito na INTENÇÃO DE BUSCA, responda confirmando o interesse. (Ex: 'Gostaria de saber sobre [tópico citado no texto]' ou 'Procuro informações sobre [trecho do texto]').\n"
+        "- Se a PERGUNTA tocar em um ponto não mencionado explicitamente na INTENÇÃO DE BUSCA, responda não confirmando o interesse. (Ex: 'Não gostaria de saber sobre [tópico citado no texto]' ou 'Não procuro informações sobre [trecho do texto]').\n"
+        "- Mantenha a resposta curta e natural, não responda nada além do que foi perguntado.\n\n"
+        
+        "INTENÇÃO DE BUSCA:\n" + str(query_intencao) + "\n\n"
+        "PERGUNTA DO SISTEMA:\n" + str(pergunta) + "\n\n"
+        
         "Retorne APENAS um JSON de uma linha com o seguinte formato: "
-        '{"answer": "<resposta direta em PT-BR baseada no BACKGROUND ou \"não sei\">"}.\n'
+        '{"answer": "<sua resposta>"}.\n'
         "Não inclua nada além do JSON."
     )
 

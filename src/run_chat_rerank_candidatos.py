@@ -50,7 +50,8 @@ def main():
         return
 
     # Seleciona as 3 primeiras queries presentes no arquivo de candidatos
-    query_ids = sorted(candidatos_df["QUERY_ID"].unique())[:3]
+    #query_ids = sorted(candidatos_df["QUERY_ID"].unique())[:3]
+    query_ids = sorted(candidatos_df["QUERY_ID"].unique())
 
     all_rows: List[Dict] = []
 
