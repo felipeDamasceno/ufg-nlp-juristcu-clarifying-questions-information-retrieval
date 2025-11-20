@@ -65,7 +65,7 @@ def gerar_intencao_busca(query_text: str, docs_ideais: List[str]) -> Dict[str, s
         "required": ["intent"],
     }
 
-    gen_config = {"response_mime_type": "application/json", "response_schema": schema}
+    gen_config = {"response_mime_type": "application/json", "response_schema": schema, "temperature": 0}
     model = genai.GenerativeModel(model_name, generation_config=gen_config)
 
     prompt = _formatar_prompt_intencao(query_text, docs_ideais)

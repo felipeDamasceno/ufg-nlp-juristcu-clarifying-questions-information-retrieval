@@ -1,5 +1,6 @@
 import os
 import sys
+import argparse
 import pandas as pd
 from typing import List, Dict
 
@@ -8,7 +9,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 from src.utils.dados import load_queries_df, load_docs_enunciado_map_clean, load_qrels_df
 from src.buscador_hibrido import BuscadorHibridoLlamaIndex
 from src.reranking import rerank_nodes
-from src.clarifying_questions import gerar_perguntas_clarificadoras_para_pares
+from src.clarifying_questions import gerar_perguntas_clarificadoras_para_pares, gerar_perguntas_sem_pares
 from src.resposta_clarificadora import responder_pergunta_clarificadora
 from llama_index.core.schema import TextNode
 from src.utils.metricas import metricas
@@ -17,8 +18,10 @@ DATA_DIR = os.path.join(BASE_DIR, "dados", "juris_tcu")
 DOC_CSV = os.path.join(DATA_DIR, "doc.csv")
 QUERY_CSV = os.path.join(DATA_DIR, "query.csv")
 CANDIDATOS_CSV = os.path.join(BASE_DIR, "dados", "candidatos_top20_full.csv")
-OUT_CSV = os.path.join(BASE_DIR, "dados", "candidatos_chat_top20.csv")
-OUT_METRICAS_CSV = os.path.join(BASE_DIR, "dados", "metricas_candidatos_chat_top10.csv")
+OUT_CSV_PAIRS = os.path.join(BASE_DIR, "dados", "candidatos_chat_top20.csv")
+OUT_METRICAS_PAIRS = os.path.join(BASE_DIR, "dados", "metricas_candidatos_chat_top10.csv")
+OUT_CSV_NO_PAIRS = os.path.join(BASE_DIR, "dados", "candidatos_chat_nodocs_top20.csv")
+OUT_METRICAS_NO_PAIRS = os.path.join(BASE_DIR, "dados", "metricas_candidatos_chat_nodocs_top10.csv")
 QUERY_INTENCAO_CSV = os.path.join(BASE_DIR, "dados", "query_intencao.csv")
 
 
@@ -31,6 +34,10 @@ def _extract_numeric_doc_id(value: str):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--modo", choices=["pares", "sem_pares"], default="pares")
+    parser.add_argument("--n", type=int, default=3)
+    args = parser.parse_args()
     if not (os.path.exists(DOC_CSV) and os.path.exists(QUERY_CSV) and os.path.exists(CANDIDATOS_CSV) and os.path.exists(QUERY_INTENCAO_CSV)):
         print("Arquivos necessários não encontrados.")
         return
@@ -50,8 +57,11 @@ def main():
         return
 
     # Seleciona as 3 primeiras queries presentes no arquivo de candidatos
-    #query_ids = sorted(candidatos_df["QUERY_ID"].unique())[:3]
-    query_ids = sorted(candidatos_df["QUERY_ID"].unique())
+    all_ids = sorted(candidatos_df["QUERY_ID"].unique())
+    if args.n and args.n > 0:
+        query_ids = all_ids[:args.n]
+    else:
+        query_ids = all_ids
 
     all_rows: List[Dict] = []
 
@@ -79,45 +89,54 @@ def main():
             enun = docs_map.get(doc_id, "")
             resultados_busca.append({"id": str(doc_id), "conteudo": enun, "score": 1.0, "metodo": "Candidato"})
 
-        print("Gerando pares similares (top 3, min sim 0.8)...")
-        try:
-            pares_similares = buscador.calcular_similaridade_entre_pares(
-                resultados_busca=resultados_busca,
-                limite_similaridade=0.8,
-                top_k=3,
-            )
-        except Exception as e:
-            print(f"✗ Falha ao calcular similaridade entre pares: {e}")
-            pares_similares = []
-
-        if not pares_similares:
-            print("(Nenhum par com similaridade suficiente)")
-            conversa = qtext
-        else:
-            # Gera 3 perguntas clarificadoras usando a conversa inicial com a query
-            pergunta_ctx = qtext
+        conversa = qtext
+        if args.modo == "pares":
+            print("Gerando pares similares (top 3, min sim 0.8)...")
             try:
-                perguntas = gerar_perguntas_clarificadoras_para_pares(
-                    pares_similares=pares_similares,
-                    pergunta=pergunta_ctx,
-                    max_perguntas=min(3, len(pares_similares)),
+                pares_similares = buscador.calcular_similaridade_entre_pares(
+                    resultados_busca=resultados_busca,
+                    limite_similaridade=0.8,
+                    top_k=3,
                 )
             except Exception as e:
-                print(f"✗ Erro ao gerar perguntas: {e}")
+                print(f"✗ Falha ao calcular similaridade entre pares: {e}")
+                pares_similares = []
+            if pares_similares:
+                pergunta_ctx = qtext
+                try:
+                    perguntas = gerar_perguntas_clarificadoras_para_pares(
+                        pares_similares=pares_similares,
+                        pergunta=pergunta_ctx,
+                        max_perguntas=min(3, len(pares_similares)),
+                    )
+                except Exception as e:
+                    print(f"✗ Erro ao gerar perguntas: {e}")
+                    perguntas = []
+                for pidx, item in enumerate(perguntas[:3], start=1):
+                    pergunta = item.get("pergunta") or ""
+                    print(f"\n[Passo {pidx}] Pergunta clarificadora: {pergunta}")
+                    try:
+                        resposta = responder_pergunta_clarificadora(intent_text, pergunta)
+                    except Exception as e:
+                        resposta = f"(Falha ao responder: {e})"
+                    print(f"Resposta: {resposta}")
+                    conversa = conversa + "\n\nPergunta clarificadora: " + pergunta + "\nResposta: " + resposta
+            else:
+                print("(Nenhum par com similaridade suficiente)")
+        else:
+            try:
+                perguntas = gerar_perguntas_sem_pares(pergunta=qtext, max_perguntas=3)
+            except Exception as e:
+                print(f"✗ Erro ao gerar perguntas sem pares: {e}")
                 perguntas = []
-
-            # Conversa incremental
-            conversa = qtext
             for pidx, item in enumerate(perguntas[:3], start=1):
                 pergunta = item.get("pergunta") or ""
                 print(f"\n[Passo {pidx}] Pergunta clarificadora: {pergunta}")
-                # Responder com base na conversa acumulada
                 try:
                     resposta = responder_pergunta_clarificadora(intent_text, pergunta)
                 except Exception as e:
                     resposta = f"(Falha ao responder: {e})"
                 print(f"Resposta: {resposta}")
-                # Atualiza conversa estilo chat
                 conversa = conversa + "\n\nPergunta clarificadora: " + pergunta + "\nResposta: " + resposta
 
         # Rerank dos 20 candidatos usando a conversa completa
@@ -150,8 +169,12 @@ def main():
     # Salva CSV consolidado
     os.makedirs(os.path.join(BASE_DIR, "dados"), exist_ok=True)
     out_df = pd.DataFrame(all_rows)
-    out_df.to_csv(OUT_CSV, index=False, encoding="utf-8")
-    print(f"\nArquivo salvo: {OUT_CSV} (linhas: {len(out_df)})")
+    if args.modo == "pares":
+        out_df.to_csv(OUT_CSV_PAIRS, index=False, encoding="utf-8")
+        print(f"\nArquivo salvo: {OUT_CSV_PAIRS} (linhas: {len(out_df)})")
+    else:
+        out_df.to_csv(OUT_CSV_NO_PAIRS, index=False, encoding="utf-8")
+        print(f"\nArquivo salvo: {OUT_CSV_NO_PAIRS} (linhas: {len(out_df)})")
 
     # Calcula métricas top-10
     if out_df.empty:
@@ -174,9 +197,14 @@ def main():
         means = pd_metricas.drop(columns=["QUERY_KEY"]).mean(numeric_only=True)
         means_df = pd.DataFrame({"QUERY_KEY": ["MEAN"], **{col: [means[col]] for col in means.index}})
         pd_metricas_out = pd.concat([pd_metricas, means_df], ignore_index=True)
-        pd_metricas_out.to_csv(OUT_METRICAS_CSV, index=False, encoding="utf-8")
-        print(pd_metricas_out.to_string(index=False))
-        print(f"Metricas salvas em: {OUT_METRICAS_CSV}")
+        if args.modo == "pares":
+            pd_metricas_out.to_csv(OUT_METRICAS_PAIRS, index=False, encoding="utf-8")
+            print(pd_metricas_out.to_string(index=False))
+            print(f"Metricas salvas em: {OUT_METRICAS_PAIRS}")
+        else:
+            pd_metricas_out.to_csv(OUT_METRICAS_NO_PAIRS, index=False, encoding="utf-8")
+            print(pd_metricas_out.to_string(index=False))
+            print(f"Metricas salvas em: {OUT_METRICAS_NO_PAIRS}")
 
 
 if __name__ == "__main__":

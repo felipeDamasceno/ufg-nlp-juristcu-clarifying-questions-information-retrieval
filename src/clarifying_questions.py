@@ -1,6 +1,7 @@
 from typing import List, Dict, Optional
 import os
 import json
+import time
 
 try:
     import google.generativeai as genai  # type: ignore
@@ -20,26 +21,25 @@ load_dotenv()
 def _formatar_prompt(pergunta, caso1, caso2):
     return (
         f"""
-Você é um assistente de IA especialista em Direito Brasileiro. A consulta original do usuário é: [{pergunta}].
+Você agora é um juiz especializado em Direito. A pergunta original do usuário é: [{pergunta}].
 
-Com base na consulta do usuário, uma busca inicial retornou dois documentos similares, mas distintos:
+Com base na consulta do usuário, uma busca inicial retornou dois documentos semelhantes, porém distintos:
 Documento 1: [{caso1}]
 Documento 2: [{caso2}]
 
 Sua tarefa é:
-1. **Analisar** e identificar a **única diferença mais importante** (factual ou jurídica) entre o Documento 1 e o Documento 2.
-2. Com base **apenas** nessa diferença chave, gere uma única pergunta clarificadora clara em Português do Brasil.
+1. **Analisar** e identificar a **única diferença mais importante** (fática ou jurídica) entre o Documento 1 e o Documento 2.
+2. Com base **exclusivamente** nessa diferença-chave, gerar uma pergunta única e clara de esclarecimento **em português do Brasil (PT-BR)**.
 
-OBJETIVO DA PERGUNTA:
-Ajudar o usuário a especificar melhor sua intenção, permitindo entender qual contexto (do Doc 1 ou Doc 2) é mais relevante para o caso dele.
-A pergunta NÃO deve mencionar "Documento 1" ou "Documento 2". A pergunta deve indagar sobre a situação ou necessidade específica do usuário.
+O objetivo dessa pergunta é ajudar o usuário a especificar sua intenção, permitindo entender qual contexto documental é mais relevante para a situação dele.
 
-Retorne APENAS um objeto JSON de linha única com a seguinte estrutura:
-{{"question": "<sua pergunta em PT-BR aqui>", "rationale": "<Explique brevemente a diferença chave identificada entre os casos e o porquê desta pergunta>"}}
+Retorne APENAS um objeto JSON de uma única linha com a seguinte estrutura:
+{{"question": "<uma pergunta clara em PT-BR, uma frase>", "rationale": "<A diferença principal entre o caso 1 e o caso 2 e o racional por trás da pergunta gerada>"}}
 
 Não inclua nada além do JSON.
 """
     )
+
 
 
 def _gerar_via_gemini(prompt: str) -> Dict[str, str]:
@@ -63,12 +63,13 @@ def _gerar_via_gemini(prompt: str) -> Dict[str, str]:
             "required": ["question", "rationale"],
         }
 
-        gen_config = {"response_mime_type": "application/json", "response_schema": schema}
+        gen_config = {"response_mime_type": "application/json", "response_schema": schema, "temperature": 0}
         model = genai.GenerativeModel(model_name, generation_config=gen_config)
         try:
             resp = model.generate_content(prompt, generation_config=gen_config)
         except Exception as e:
             raise RuntimeError(f"Falha ao gerar conteúdo com Gemini: {e}")
+        time.sleep(1)
 
         # Extrai texto da resposta usando utilitário compartilhado
         full_text = extrair_texto_resposta(resp)
@@ -94,6 +95,66 @@ def _gerar_via_gemini(prompt: str) -> Dict[str, str]:
 
 
 
+
+def _formatar_prompt_sem_pares(pergunta: str, n: int = 3) -> str:
+    return (
+        f"""
+Você é um assistente de IA especialista em Direito Brasileiro. A consulta original do usuário é: [{pergunta}].
+
+Com base nessa consulta, gere {n} perguntas clarificadoras em Português do Brasil que ajudem a identificar a necessidade específica do usuário.
+
+Cada pergunta deve explorar uma diferença chave de interpretação ou de situação prática relevante à consulta, sem mencionar documentos específicos.
+
+Retorne APENAS um array JSON com {n} objetos no formato:
+[{{"question": "<pergunta em PT-BR>", "rationale": "<racional sucinto>"}}, ...]
+
+Não inclua nada além do JSON.
+"""
+    )
+
+
+def gerar_perguntas_sem_pares(pergunta: str, max_perguntas: int = 3) -> List[Dict]:
+    configurar_gemini()
+    model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash-lite")
+    n = max(1, max_perguntas)
+    prompt = _formatar_prompt_sem_pares(pergunta, n)
+    try:
+        schema = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string"},
+                    "rationale": {"type": "string"},
+                },
+                "required": ["question", "rationale"],
+            },
+        }
+        gen_config = {"response_mime_type": "application/json", "response_schema": schema, "temperature": 0}
+        model = genai.GenerativeModel(model_name, generation_config=gen_config)
+        resp = model.generate_content(prompt, generation_config=gen_config)
+        time.sleep(1)
+        full_text = extrair_texto_resposta(resp)
+        if full_text is None:
+            raise RuntimeError("Resposta do Gemini não contém texto gerado.")
+        full_text = strip_code_fences(full_text)
+        data = json.loads(full_text)
+        if not isinstance(data, list):
+            raise RuntimeError("Resposta não é um array JSON.")
+        resultados: List[Dict] = []
+        for i, item in enumerate(data[:n]):
+            q = item.get("question")
+            if not q or not isinstance(q, str):
+                continue
+            resultados.append({
+                "par_index": i,
+                "pergunta": q.strip(),
+                "resposta_completa": full_text,
+                "origem": "gemini",
+            })
+        return resultados
+    except Exception as e:
+        raise RuntimeError(f"Falha ao gerar perguntas sem pares: {e}")
 
 def gerar_perguntas_clarificadoras_para_pares(
     pares_similares: List[Dict],

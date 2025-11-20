@@ -15,6 +15,7 @@ Uso de prompt solicitado:
 
 from typing import Dict
 import os
+import time
 import json
 
 # Tentativa de importar o SDK do Gemini
@@ -66,12 +67,13 @@ def responder_pergunta_clarificadora(query_intencao: str, pergunta: str) -> str:
     gen_config = {
         "response_mime_type": "application/json",
         "response_schema": schema,
-        "temperature": 0.2,
+        "temperature": 0,
         "max_output_tokens": 1024,
     }
     model = genai.GenerativeModel(model_name, generation_config=gen_config)
 
     response = model.generate_content(prompt, generation_config=gen_config)
+    time.sleep(1)
     texto = extrair_texto_resposta(response)
     texto = strip_code_fences(texto)
 
