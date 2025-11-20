@@ -78,7 +78,7 @@ def teste_perguntas_clarificadoras_fake():
     print(f"\n✓ Foram encontrados {len(pares_similares)} pares com similaridade > 0.8.")
 
     # 4. Gerar perguntas clarificadoras para os top-3 pares
-    conversa_exemplo = (
+    pergunta_exemplo = (
         "Usuário: Estou analisando casos de licitação e auditoria no TCU. "
     )
 
@@ -86,7 +86,7 @@ def teste_perguntas_clarificadoras_fake():
     try:
         perguntas = gerar_perguntas_clarificadoras_para_pares(
             pares_similares=pares_similares,
-            conversa=conversa_exemplo,
+            pergunta=pergunta_exemplo,
             max_perguntas=3,
         )
 

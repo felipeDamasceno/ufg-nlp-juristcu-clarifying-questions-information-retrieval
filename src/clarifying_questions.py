@@ -18,10 +18,10 @@ load_dotenv()
 
 
 # Supondo que seu código estava dentro de uma função como no traceback
-def _formatar_prompt(conversa, caso1, caso2):
+def _formatar_prompt(pergunta, caso1, caso2):
     return (
         f"""
-You are now a knowledgeable judge in law. The current conversation is: [{conversa}].
+You are now a knowledgeable judge in law. The user's original question is: [{pergunta}].
 
 Based on the user's query, an initial search returned two similar, but distinct, documents:
 Document 1: [{caso1}]
@@ -96,7 +96,7 @@ def _gerar_via_gemini(prompt: str) -> Dict[str, str]:
 
 def gerar_perguntas_clarificadoras_para_pares(
     pares_similares: List[Dict],
-    conversa: str,
+    pergunta: str,
     max_perguntas: int = 3,
 ) -> List[Dict]:
     """
@@ -104,7 +104,7 @@ def gerar_perguntas_clarificadoras_para_pares(
 
     Args:
         pares_similares: Lista de pares retornados por calcular_similaridade_entre_pares.
-        conversa: Texto da conversa atual.
+        pergunta: Texto da pergunta original do usuário.
         max_perguntas: Quantidade máxima de perguntas a gerar (uma por par).
 
     Returns:
@@ -122,7 +122,7 @@ def gerar_perguntas_clarificadoras_para_pares(
         caso1 = _texto_do_resultado(doc1)
         caso2 = _texto_do_resultado(doc2)
 
-        prompt = _formatar_prompt(conversa, caso1, caso2)
+        prompt = _formatar_prompt(pergunta, caso1, caso2)
         resultado = _gerar_via_gemini(prompt)
         origem = "gemini"
 
